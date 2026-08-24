@@ -33,10 +33,14 @@ const BREAK_LENGTH_SLOTS = 2;    // 休憩1時間 = 30分コマ2個
 const EDGE_GUARD_SLOTS = 2;      // 勤務の最初と最後の1時間は休憩を避ける
 
 // 勤務ブロック(連続した TIME_SLOTS の配列)から、休憩として除外する時間帯を返す。
-// 6時間未満の勤務は休憩なし。最初と最後の1時間を避けた範囲の中で、
-// 必要人数が少ない (=混雑ピークでない) 時間帯を優先して1時間の休憩を配置し、
-// 人員不足が発生しにくいようにする。必要人数が同点の場合は中央付近を優先する。
-const getBreakSlots = (block) => {
+// daySchedule はその日の「休憩を差し引く前」の仮配置状態 ({slot: [従業員, ...]})。
+// 他の全スタッフの配置(＝他の人の休憩も反映済みなら尚良い)を踏まえて、
+// 1. 自分が抜けることでフード担当0人になる時間帯を避け、
+// 2. 自分が抜けることで人数不足(必要人数割れ)になる/悪化する時間帯を避け、
+// 3. それでも同点なら混雑ピークでない時間帯を優先、
+// 4. 最後は中央付近を優先する、という優先順位で1時間の休憩位置を選ぶ。
+// 6時間未満の勤務は休憩なし。最初と最後の1時間は対象から除外する。
+const chooseBreakSlots = (block, daySchedule, emp) => {
   if (block.length < BREAK_ELIGIBLE_SLOTS) return [];
   const earliestStart = EDGE_GUARD_SLOTS;
   const latestStart = block.length - EDGE_GUARD_SLOTS - BREAK_LENGTH_SLOTS;
@@ -45,11 +49,26 @@ const getBreakSlots = (block) => {
   const midpoint = earliestStart + (latestStart - earliestStart) / 2;
   let bestStartIdx = earliestStart;
   let bestScore = Infinity;
+
   for (let startIdx = earliestStart; startIdx <= latestStart; startIdx++) {
     const candidate = block.slice(startIdx, startIdx + BREAK_LENGTH_SLOTS);
-    const demand = candidate.reduce((sum, s) => sum + getRequiredStaffCount(s), 0);
+    let cookGapScore = 0;
+    let deficitScore = 0;
+    let demandScore = 0;
+
+    candidate.forEach(s => {
+      const assignedAtSlot = daySchedule[s] || [];
+      const countAfterBreak = assignedAtSlot.length - 1; // 自分が抜けた後の人数
+      const cookCountAfterBreak = assignedAtSlot.filter(e => e.canCook).length - (emp.canCook ? 1 : 0);
+
+      if (emp.canCook && cookCountAfterBreak < 1) cookGapScore += 1;
+      deficitScore += Math.max(0, getRequiredStaffCount(s) - countAfterBreak);
+      demandScore += getRequiredStaffCount(s);
+    });
+
     const distanceFromMiddle = Math.abs(startIdx - midpoint);
-    const score = demand * 100 + distanceFromMiddle; // 必要人数の少なさを最優先、同点なら中央寄り
+    // フード担当0人化を最優先で回避 > 人数不足の悪化を回避 > 混雑ピーク回避 > 中央寄り
+    const score = cookGapScore * 100000 + deficitScore * 1000 + demandScore * 10 + distanceFromMiddle;
     if (score < bestScore) {
       bestScore = score;
       bestStartIdx = startIdx;
@@ -197,7 +216,11 @@ export default function App() {
       const candidates = staff.filter(emp => (emp.preferences[day]?.length || 0) > 0);
       // 1人1日1ブロックのみ: 一度採用した人はその日はもう選ばない
       const assignedIds = new Set();
+      // この日に採用した人と、その希望ブロック (休憩を差し引く前)
+      const recruitedThisDay = [];
 
+      // フェーズ1: まず休憩を考慮せず (全員フル出勤している前提で) 必要人数を満たすように採用する。
+      // こうすることで、後から差し引く休憩の影響を過不足なく把握できる。
       TIME_SLOTS.forEach(slot => {
         const REQUIRED_STAFF = getRequiredStaffCount(slot);
 
@@ -223,21 +246,33 @@ export default function App() {
           pool.sort((a, b) => slotsWorkedMonth[a.id] - slotsWorkedMonth[b.id]);
           const chosen = pool[0];
 
-          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)。
-          // 6時間以上の勤務になる場合は、最初と最後の1時間を避けて1時間の休憩を除外する。
+          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)
           const block = chosen.preferences[day];
-          const breakSlots = getBreakSlots(block);
-          const workingSlots = block.filter(s => !breakSlots.includes(s));
-          workingSlots.forEach(s => newSchedule[day][s].push(chosen));
-          slotsWorkedMonth[chosen.id] += workingSlots.length;
+          block.forEach(s => newSchedule[day][s].push(chosen));
           assignedIds.add(chosen.id);
+          recruitedThisDay.push({ emp: chosen, block });
 
           needCook = newSchedule[day][slot].filter(s => s.canCook).length < 1;
           needMore = newSchedule[day][slot].length < REQUIRED_STAFF;
         }
       });
 
-      // 人数・スキル不足チェックと記録
+      // フェーズ2: 採用が確定した全員のフル配置状態を踏まえて、休憩(6時間以上勤務の人のみ)を割り当てる。
+      // 1人ずつ休憩を引くたびに残り人数が更新されるため、後の人ほど「他の人の休憩」も考慮した上で
+      // できるだけ人員不足を生まない時間帯が選ばれる。
+      recruitedThisDay.forEach(({ emp, block }) => {
+        const breakSlots = chooseBreakSlots(block, newSchedule[day], emp);
+        if (breakSlots.length === 0) {
+          slotsWorkedMonth[emp.id] += block.length;
+          return;
+        }
+        breakSlots.forEach(s => {
+          newSchedule[day][s] = newSchedule[day][s].filter(e => e.id !== emp.id);
+        });
+        slotsWorkedMonth[emp.id] += block.length - breakSlots.length;
+      });
+
+      // 人数・スキル不足チェックと記録 (休憩を反映した最終状態で判定)
       TIME_SLOTS.forEach(slot => {
         const assignedStaff = newSchedule[day][slot];
         const REQUIRED_STAFF = getRequiredStaffCount(slot);

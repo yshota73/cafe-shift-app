@@ -72,11 +72,14 @@ const generateDummyPreferences = (empIndex) => {
   return prefs;
 };
 
-// 初期データ生成: 従業員32名 (うちフード担当12名)
+// フード担当可能な従業員のインデックス (指名の5名 + 元からの担当者を絞って非対応者の割合を増やす)
+const COOK_STAFF_INDICES = new Set([0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16]);
+
+// 初期データ生成: 従業員32名 (うちフード担当13名)
 const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
   id: `EMP${String(i + 1).padStart(3, '0')}`,
   name: name,
-  canCook: i < 17, // 最初の17人がフード担当可能
+  canCook: COOK_STAFF_INDICES.has(i),
   preferences: generateDummyPreferences(i)
 }));
 
@@ -852,6 +855,11 @@ export default function App() {
               <tbody>
                 {workingStaff.map(emp => {
                   const flags = TIME_SLOTS.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
+                  const firstIdx = flags.indexOf(true);
+                  const lastIdx = flags.lastIndexOf(true);
+                  const shiftLabel = firstIdx === -1
+                    ? ''
+                    : `${emp.name}: ${TIME_SLOTS[firstIdx].split(' - ')[0]} 〜 ${TIME_SLOTS[lastIdx].split(' - ')[1]}`;
                   return (
                     <tr key={emp.id} className="hover:bg-gray-50">
                       <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 overflow-hidden whitespace-nowrap">
@@ -872,7 +880,7 @@ export default function App() {
                           >
                             {working && (
                               <div
-                                title={`${emp.name} / ${slot}`}
+                                title={shiftLabel}
                                 className={`h-6 my-1.5 ${emp.canCook ? 'bg-orange-400' : 'bg-blue-400'} ${!prevWorking ? 'rounded-l-full ml-0.5' : ''} ${!nextWorking ? 'rounded-r-full mr-0.5' : ''}`}
                               ></div>
                             )}

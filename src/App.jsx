@@ -1,0 +1,947 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  Users, Calendar, Clock, AlertTriangle, CheckCircle,
+  Settings, ChevronRight, ChevronLeft,
+  Coffee, ChefHat, Edit, BarChart2,
+  ArrowUp, ArrowDown, Trash2, UserPlus, GripVertical
+} from 'lucide-react';
+
+// カフェ・ド・クリエ渋谷3丁目店のシフト時間帯 (準備・片付けを含め 06:30 - 21:30) 30分刻み
+const TIME_SLOTS = [
+  '06:30 - 07:00', '07:00 - 07:30', '07:30 - 08:00', '08:00 - 08:30', '08:30 - 09:00',
+  '09:00 - 09:30', '09:30 - 10:00', '10:00 - 10:30', '10:30 - 11:00',
+  '11:00 - 11:30', '11:30 - 12:00', '12:00 - 12:30', '12:30 - 13:00',
+  '13:00 - 13:30', '13:30 - 14:00', '14:00 - 14:30', '14:30 - 15:00',
+  '15:00 - 15:30', '15:30 - 16:00', '16:00 - 16:30', '16:30 - 17:00',
+  '17:00 - 17:30', '17:30 - 18:00', '18:00 - 18:30', '18:30 - 19:00',
+  '19:00 - 19:30', '19:30 - 20:00', '20:00 - 20:30', '20:30 - 21:00',
+  '21:00 - 21:30'
+];
+
+// 時間帯別の必要人数 (渋谷3丁目店の混雑傾向を反映)
+const getRequiredStaffCount = (slot) => {
+  const startHour = parseFloat(slot.substring(0, 5).replace(':', '.'));
+  
+  if (startHour >= 12.0 && startHour < 14.0) return 5; // ランチピーク (12:00-14:00)
+  if (startHour >= 17.0 && startHour < 19.0) return 4; // 夕方ピーク (17:00-19:00)
+  if (startHour >= 8.5 && startHour < 9.5) return 4;   // 朝のラッシュ (8:30-9:30)
+  return 3; // その他の時間は基本3名
+};
+
+// 曜日配列
+const DAYS_OF_WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+
+// 初期従業員名リスト (32名)
+const STAFF_NAMES = [
+  '長井咲由莉', '中田裕子', '江連涼羽', '西口海斗', '鷹取りょう', '所谷陽', '久保颯一朗', '水落成海',
+  '武藤聖亜', '新井琴羽', '畑中瑞希', '田中優月', '佐橋樹哉', '萱野夕歌', '天野龍哉', '荒木美音',
+  '吉田彩子', '山口蓮奈', '萩原碧泉', '嘉本祥大', 'ロイプジャ', '豊泉玲奈', '渡辺桐子', '清水麻衣',
+  '山岸優澄', '保科美琴', '熊崎卓', '服部果歩', '渡瀬愛子', '正木乃彩', '谷野愛莉', '岩佐珠希'
+];
+
+// 31日分のダミー希望シフトを生成する関数 (よくばらけた状態を作る)
+const generateDummyPreferences = (empIndex) => {
+  const prefs = {};
+  // 32人のうち、最初の20人だけが希望シフトを提出している状態にする
+  if (empIndex >= 20) return prefs;
+
+  // 1日〜31日までダミーデータを生成
+  for (let day = 1; day <= 31; day++) {
+    // 人と日付の組み合わせで、週休2〜3日程度の休みをランダム風に設定
+    if ((empIndex * 2 + day) % 7 < 2) continue;
+
+    // 出勤時間帯のパターンをばらけさせる (0: 朝, 1: 昼, 2: 夜, 3: フルタイム)
+    const pattern = (empIndex + day) % 4;
+    let selectedSlots = [];
+
+    if (pattern === 0) {
+      // 朝メイン (06:30 - 13:00)
+      selectedSlots = TIME_SLOTS.slice(0, 13);
+    } else if (pattern === 1) {
+      // 昼メイン (11:00 - 17:00)
+      selectedSlots = TIME_SLOTS.slice(9, 21);
+    } else if (pattern === 2) {
+      // 夜メイン (17:00 - 21:30)
+      selectedSlots = TIME_SLOTS.slice(21, 30);
+    } else {
+      // 日中通し (09:00 - 18:00)
+      selectedSlots = TIME_SLOTS.slice(5, 23);
+    }
+    prefs[day] = selectedSlots;
+  }
+  return prefs;
+};
+
+// 初期データ生成: 従業員32名 (うちフード担当12名)
+const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
+  id: `EMP${String(i + 1).padStart(3, '0')}`,
+  name: name,
+  canCook: i < 12, // 最初の12人がフード担当可能
+  preferences: generateDummyPreferences(i)
+}));
+
+export default function App() {
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [staff, setStaff] = useState(INITIAL_STAFF);
+  const [schedule, setSchedule] = useState({});
+  const [shortages, setShortages] = useState({});
+  const [targetYear, setTargetYear] = useState(new Date().getFullYear());
+  const [targetMonth, setTargetMonth] = useState(new Date().getMonth() + 1);
+  const [selectedDay, setSelectedDay] = useState(1);
+  
+  // シフト入力フォーム用のステート
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(INITIAL_STAFF[0].id);
+  // 新規従業員追加用のステート
+  const [newStaffName, setNewStaffName] = useState('');
+
+  // ドラッグ＆ドロップ（長押し・iOSライク）関連のStateとRef
+  const [draggedIndex, setDraggedIndex] = useState(null);
+  const dragTimeoutRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  // コンポーネント破棄時にタイマーをクリーンアップ
+  useEffect(() => {
+    return () => {
+      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
+    };
+  }, []);
+
+  const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+
+  const getDayOfWeek = (day) => {
+    const date = new Date(targetYear, targetMonth - 1, day);
+    return DAYS_OF_WEEK[date.getDay()];
+  };
+
+  const generateSchedule = () => {
+    const newSchedule = {};
+    const newShortages = {};
+
+    // 1日から月末日までループ
+    for (let day = 1; day <= daysInMonth; day++) {
+      newSchedule[day] = {};
+      newShortages[day] = [];
+
+      // 制約1: 各従業員のその日の労働スロット数をトラッキング (労働時間平準化用)
+      const slotsWorked = {};
+      staff.forEach(emp => slotsWorked[emp.id] = 0);
+
+      // 各時間帯についてループ
+      TIME_SLOTS.forEach(slot => {
+        let assignedStaff = [];
+        const REQUIRED_STAFF = getRequiredStaffCount(slot);
+
+        // その日に出勤希望を出している従業員を抽出 (最大勤務時間の制限は撤廃)
+        let available = staff.filter(emp => 
+          emp.preferences[day]?.includes(slot)
+        );
+
+        // 労働時間平準化のヒューリスティック: 労働時間が少ない人を優先
+        available.sort((a, b) => slotsWorked[a.id] - slotsWorked[b.id]);
+
+        // フード担当可能と不可能で分ける
+        const availableCooks = available.filter(emp => emp.canCook);
+        const availableNonCooks = available.filter(emp => !emp.canCook);
+
+        // 1. フード担当を最低1名配置 (ハード制約)
+        if (availableCooks.length > 0) {
+          const cook = availableCooks[0];
+          assignedStaff.push(cook);
+          slotsWorked[cook.id]++;
+          availableCooks.shift(); // 配置済みの人を除外
+        }
+
+        // 残りの利用可能なスタッフを統合して再度労働時間でソート
+        let remainingAvailable = [...availableCooks, ...availableNonCooks]
+          .sort((a, b) => slotsWorked[a.id] - slotsWorked[b.id]);
+
+        // 2. 必要人数を満たすように残りのスタッフを追加 (ハード制約)
+        let targetStaffCount = Math.max(0, REQUIRED_STAFF - assignedStaff.length);
+        for (let i = 0; i < targetStaffCount && i < remainingAvailable.length; i++) {
+          const emp = remainingAvailable[i];
+          assignedStaff.push(emp);
+          slotsWorked[emp.id]++;
+        }
+
+        // 3. 人数・スキル不足チェックと記録
+        const cookCount = assignedStaff.filter(s => s.canCook).length;
+        if (cookCount < 1) {
+           newShortages[day].push({
+            slot,
+            reason: 'フード担当者が必要 (現状0人)'
+          });
+        }
+        if (assignedStaff.length < REQUIRED_STAFF) {
+          newShortages[day].push({
+            slot,
+            reason: `人数不足 (現在${assignedStaff.length}人 / 最低${REQUIRED_STAFF}人必要)`
+          });
+        }
+
+        newSchedule[day][slot] = assignedStaff;
+      });
+    }
+
+    setSchedule(newSchedule);
+    setShortages(newShortages);
+    // シフト生成後は自動的にシフト表タブへ遷移
+    setActiveTab('schedule'); 
+  };
+
+  const togglePreference = (empId, day, slot) => {
+    setStaff(prev => prev.map(emp => {
+      if (emp.id !== empId) return emp;
+      const dayPrefs = emp.preferences[day] || [];
+      const isSelected = dayPrefs.includes(slot);
+      return {
+        ...emp,
+        preferences: {
+          ...emp.preferences,
+          [day]: isSelected 
+            ? dayPrefs.filter(s => s !== slot) 
+            : [...dayPrefs, slot]
+        }
+      };
+    }));
+  };
+
+  const toggleCookStatus = (empId) => {
+    setStaff(prev => prev.map(emp => 
+      emp.id === empId ? { ...emp, canCook: !emp.canCook } : emp
+    ));
+  };
+
+  const changeMonth = (offset) => {
+    let newMonth = targetMonth + offset;
+    let newYear = targetYear;
+    if (newMonth > 12) {
+      newMonth = 1;
+      newYear++;
+    } else if (newMonth < 1) {
+      newMonth = 12;
+      newYear--;
+    }
+    setTargetMonth(newMonth);
+    setTargetYear(newYear);
+    setSelectedDay(1); // Reset day when month changes
+  };
+
+  const handleAddStaff = () => {
+    if (!newStaffName.trim()) return;
+    
+    // 新しいIDの生成（既存の最大ID+1）
+    let maxId = 0;
+    staff.forEach(emp => {
+      if (emp.id.startsWith('EMP')) {
+        const num = parseInt(emp.id.replace('EMP', ''), 10);
+        if (!isNaN(num) && num > maxId) maxId = num;
+      }
+    });
+    const newId = `EMP${String(maxId + 1).padStart(3, '0')}`;
+
+    const newEmp = {
+      id: newId,
+      name: newStaffName.trim(),
+      canCook: false,
+      preferences: {}
+    };
+    
+    const updatedStaff = [...staff, newEmp];
+    setStaff(updatedStaff);
+    setNewStaffName('');
+    if (!selectedEmployeeId) {
+      setSelectedEmployeeId(newId);
+    }
+  };
+
+  const handleDeleteStaff = (id) => {
+    const updatedStaff = staff.filter(emp => emp.id !== id);
+    setStaff(updatedStaff);
+    
+    // 削除された従業員が選択中だった場合、別の従業員を選択状態にする
+    if (selectedEmployeeId === id) {
+      setSelectedEmployeeId(updatedStaff.length > 0 ? updatedStaff[0].id : null);
+    }
+  };
+
+  const moveStaffUp = (index) => {
+    if (index === 0) return;
+    const newStaff = [...staff];
+    [newStaff[index - 1], newStaff[index]] = [newStaff[index], newStaff[index - 1]];
+    setStaff(newStaff);
+  };
+
+  const moveStaffDown = (index) => {
+    if (index === staff.length - 1) return;
+    const newStaff = [...staff];
+    [newStaff[index + 1], newStaff[index]] = [newStaff[index], newStaff[index + 1]];
+    setStaff(newStaff);
+  };
+
+  // --- 長押しドラッグ＆ドロップ (iOSライク) の処理 ---
+  const handlePointerDown = (e, index) => {
+    // PCの場合は左クリックのみ許可
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    
+    // 削除ボタンや切替ボタンを押した時はドラッグを発火させない
+    if (e.target.closest('button')) return;
+
+    // 長押しの判定 (300ms)
+    dragTimeoutRef.current = setTimeout(() => {
+      setDraggedIndex(index);
+      isDraggingRef.current = true;
+      // 対応端末で軽いバイブレーション
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(40);
+      }
+      // ドラッグ中のスクロールや余計なアクションを防ぐ
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+      document.body.style.userSelect = 'none';
+    }, 300);
+  };
+
+  const handlePointerMove = (e) => {
+    // 長押し成立前に指が動いたらキャンセル（通常のスクロールと判別）
+    if (!isDraggingRef.current && dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+      return;
+    }
+
+    if (isDraggingRef.current && draggedIndex !== null) {
+      // スクロール等のデフォルト動作を防ぐ
+      if (e.cancelable) e.preventDefault(); 
+      
+      // 指やカーソルの下にある要素を特定
+      const target = document.elementFromPoint(e.clientX, e.clientY);
+      if (target) {
+        const row = target.closest('[data-row-index]');
+        if (row) {
+          const hoverIndex = parseInt(row.getAttribute('data-row-index'), 10);
+          // 別の行の上に乗った場合、即座に配列を入れ替える（動的な入れ替わり）
+          if (hoverIndex !== draggedIndex && !isNaN(hoverIndex)) {
+             setStaff(prev => {
+                const newStaff = [...prev];
+                const item = newStaff.splice(draggedIndex, 1)[0];
+                newStaff.splice(hoverIndex, 0, item);
+                return newStaff;
+             });
+             // 追いかけるように現在のインデックスを更新
+             setDraggedIndex(hoverIndex);
+          }
+        }
+      }
+    }
+  };
+
+  const handlePointerUp = () => {
+    // タイマーのリセット
+    if (dragTimeoutRef.current) {
+      clearTimeout(dragTimeoutRef.current);
+      dragTimeoutRef.current = null;
+    }
+    // ドラッグ状態の解除とスクロール制限の復元
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      setDraggedIndex(null);
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+      document.body.style.userSelect = '';
+    }
+  };
+  // ------------------------------------------------
+
+  const renderDashboard = () => (
+    <div className="space-y-6">
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+           <h2 className="text-xl font-bold text-gray-800 mb-1">シフト対象月設定</h2>
+           <p className="text-sm text-gray-500">シフトを作成する年月を選択してください。</p>
+        </div>
+        <div className="flex items-center space-x-2 md:space-x-4 w-full md:w-auto justify-center bg-gray-50 md:bg-transparent p-2 md:p-0 rounded-lg">
+          <button onClick={() => changeMonth(-1)} className="p-2 bg-white md:bg-gray-100 rounded-full hover:bg-gray-200 shadow-sm md:shadow-none"><ChevronLeft size={20} /></button>
+          <span className="text-xl md:text-2xl font-bold w-32 md:w-40 text-center">{targetYear}年 {targetMonth}月</span>
+          <button onClick={() => changeMonth(1)} className="p-2 bg-white md:bg-gray-100 rounded-full hover:bg-gray-200 shadow-sm md:shadow-none"><ChevronRight size={20} /></button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100">
+          <h2 className="text-lg font-bold text-gray-800 mb-4 flex items-center">
+            <Users className="mr-2 text-blue-500" />
+            現在のスタッフ状況
+          </h2>
+          <div className="flex flex-col sm:flex-row gap-4">
+            <div className="bg-blue-50 p-4 rounded-lg flex-1">
+              <div className="text-sm text-blue-600 font-medium">総従業員数</div>
+              <div className="text-2xl md:text-3xl font-bold text-blue-800">{staff.length}名</div>
+            </div>
+            <div className="bg-orange-50 p-4 rounded-lg flex-1">
+              <div className="text-sm text-orange-600 font-medium">フード対応可能</div>
+              <div className="text-2xl md:text-3xl font-bold text-orange-800">
+                {staff.filter(s => s.canCook).length}名
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-gray-800 mb-2 flex items-center">
+              <Settings className="mr-2 text-gray-500" />
+              シフト生成アクション
+            </h2>
+            <p className="text-sm text-gray-600 mb-4">
+              スタッフの希望シフトと最適化条件に基づき、1ヶ月分のシフトを自動生成します。
+            </p>
+          </div>
+          <button
+            onClick={generateSchedule}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center shadow-md mt-auto"
+          >
+            <Calendar className="mr-2" />
+            最適化してシフトを自動生成
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderTrends = () => (
+    <div className="space-y-6">
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100">
+        <h2 className="text-xl font-bold text-gray-800 mb-2">混雑傾向と必要人員</h2>
+        <p className="text-sm md:text-base text-gray-600 mb-6">
+          渋谷3丁目店の一般的な混雑傾向データに基づき、時間帯ごとに必要なスタッフ数を自動設定しています。
+          この設定はシフト自動生成時の「必要人数制約」として機能します。
+        </p>
+        
+        <div className="overflow-x-auto -mx-4 md:mx-0">
+          <div className="min-w-[600px] px-4 md:px-0">
+            <table className="w-full text-left border-collapse">
+               <thead>
+                  <tr className="bg-gray-50 text-gray-600 text-sm border-b border-gray-200">
+                    <th className="p-3 font-medium border-r border-gray-100 w-32 whitespace-nowrap">時間帯</th>
+                    <th className="p-3 font-medium">混雑傾向メモ</th>
+                    <th className="p-3 font-medium text-center w-24 whitespace-nowrap">必要人数</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                   <tr className="hover:bg-gray-50">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">06:30 - 08:30</td>
+                      <td className="p-3 text-sm text-gray-600">開店準備および朝の出勤前。比較的穏やか。（最低3名は確保）</td>
+                      <td className="p-3 text-center"><span className="font-bold text-gray-800">3名</span></td>
+                   </tr>
+                   <tr className="hover:bg-gray-50 bg-orange-50/30">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">08:30 - 09:30</td>
+                      <td className="p-3 text-sm text-gray-600">出社直前のピークラッシュ。テイクアウト需要等で混雑しやすい。</td>
+                      <td className="p-3 text-center"><span className="font-bold text-orange-600">4名</span></td>
+                   </tr>
+                   <tr className="hover:bg-gray-50 bg-red-50/30">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">12:00 - 14:00</td>
+                      <td className="p-3 text-sm text-gray-600">ランチタイムピーク。店内飲食・フード注文が集中するため最大人数配置。</td>
+                      <td className="p-3 text-center"><span className="font-bold text-red-600">5名</span></td>
+                   </tr>
+                   <tr className="hover:bg-gray-50 bg-yellow-50/30">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">14:00 - 17:00</td>
+                      <td className="p-3 text-sm text-gray-600">ティータイム。一定の客数はあるがピークほどではない。</td>
+                      <td className="p-3 text-center"><span className="font-bold text-yellow-600">3名</span></td>
+                   </tr>
+                   <tr className="hover:bg-gray-50 bg-orange-50/30">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">17:00 - 19:00</td>
+                      <td className="p-3 text-sm text-gray-600">夕方ピーク。仕事終わりの待ち合わせや軽食利用で再度混雑。</td>
+                      <td className="p-3 text-center"><span className="font-bold text-orange-600">4名</span></td>
+                   </tr>
+                   <tr className="hover:bg-gray-50">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">19:00 - 21:30</td>
+                      <td className="p-3 text-sm text-gray-600">夜間帯および閉店作業。比較的落ち着いてくる。</td>
+                      <td className="p-3 text-center"><span className="font-bold text-gray-800">3名</span></td>
+                   </tr>
+                </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderPreferenceForm = () => {
+    const selectedEmp = staff.find(s => s.id === selectedEmployeeId);
+    
+    // 選択された日（selectedDay）に出勤予定（希望）がある人を上に並べ替えたリストを生成
+    const sortedStaffForInput = [...staff].sort((a, b) => {
+      const aHasShift = (a.preferences[selectedDay] && a.preferences[selectedDay].length > 0) ? 1 : 0;
+      const bHasShift = (b.preferences[selectedDay] && b.preferences[selectedDay].length > 0) ? 1 : 0;
+      
+      // 出勤予定がある人を上にする (降順)
+      if (aHasShift !== bHasShift) {
+        return bHasShift - aHasShift;
+      }
+      
+      // 出勤予定の有無が同じ場合は、従業員管理画面での元の並び順（インデックス）を保持する
+      const aIndex = staff.findIndex(s => s.id === a.id);
+      const bIndex = staff.findIndex(s => s.id === b.id);
+      return aIndex - bIndex;
+    });
+    
+    return (
+      <div className="bg-white p-4 md:p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col md:flex-row gap-6">
+        <div className="w-full md:w-1/3 border-b md:border-b-0 md:border-r border-gray-100 pb-4 md:pb-0 md:pr-6">
+          <h2 className="text-lg font-bold text-gray-800 mb-4">従業員選択</h2>
+          <div className="h-48 md:h-[500px] overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-gray-300">
+            {sortedStaffForInput.map(emp => {
+              const hasShift = emp.preferences[selectedDay] && emp.preferences[selectedDay].length > 0;
+              return (
+                <button
+                  key={emp.id}
+                  onClick={() => setSelectedEmployeeId(emp.id)}
+                  className={`w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg transition-colors flex justify-between items-center ${
+                    selectedEmployeeId === emp.id 
+                      ? 'bg-blue-600 text-white shadow-md' 
+                      : hasShift 
+                        ? 'bg-blue-50/60 hover:bg-blue-100 text-blue-800 border border-blue-100' // 出勤予定者のスタイル
+                        : 'bg-gray-50 hover:bg-gray-100 text-gray-700'
+                  }`}
+                >
+                  <div className="flex flex-col">
+                    <span className="font-medium text-sm md:text-base">{emp.name}</span>
+                    <span className={`text-xs ${selectedEmployeeId === emp.id ? 'text-blue-200' : 'text-gray-500'}`}>
+                      {emp.id} {hasShift && '• 出勤予定'}
+                    </span>
+                  </div>
+                  {emp.canCook && <ChefHat size={16} className={selectedEmployeeId === emp.id ? 'text-orange-200 flex-shrink-0' : 'text-orange-500 flex-shrink-0'} />}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="w-full md:w-2/3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+            <h2 className="text-lg font-bold text-gray-800 truncate">
+              {selectedEmp?.name} さんの希望シフト
+            </h2>
+            <div className="flex items-center justify-between sm:justify-center space-x-2 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
+               <button 
+                  onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
+                  className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <span className="font-medium w-32 md:w-28 text-center text-sm md:text-base">
+                  {targetMonth}/{selectedDay} ({getDayOfWeek(selectedDay)})
+                </span>
+                <button 
+                  onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
+                  className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
+                >
+                  <ChevronRight size={18} />
+                </button>
+            </div>
+          </div>
+          
+          <p className="text-xs md:text-sm text-gray-500 mb-4 bg-blue-50 p-3 rounded-lg">出勤可能な時間帯をタップして選択してください。（複数選択可）</p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3 h-[400px] md:h-[450px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-300">
+            {TIME_SLOTS.map(slot => {
+              const isSelected = selectedEmp?.preferences[selectedDay]?.includes(slot);
+              return (
+                <button
+                  key={slot}
+                  onClick={() => togglePreference(selectedEmp.id, selectedDay, slot)}
+                  className={`py-2 md:py-3 px-1 md:px-2 text-xs md:text-sm rounded-lg border-2 transition-all font-medium ${
+                    isSelected 
+                      ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' 
+                      : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
+                  }`}
+                >
+                  {slot}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStaff = () => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-full md:block">
+      <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 gap-4">
+        <div>
+           <h2 className="text-lg font-bold text-gray-800 flex items-center">
+             <Users className="mr-2 text-blue-500" size={20} />
+             従業員マスタ管理
+           </h2>
+           <p className="text-xs md:text-sm text-gray-500 mt-1 leading-relaxed">
+             フード担当スキルの切替や従業員の管理ができます。<br className="hidden md:block" />
+             <span className="font-semibold text-blue-600">Tip:</span> 各行を長押しすると浮き上がり、そのままスライドして直感的に並べ替えが可能です。
+           </p>
+        </div>
+        
+        {/* 新規追加フォーム */}
+        <div className="flex items-center w-full md:w-auto bg-white p-1 rounded-lg border border-gray-200 shadow-sm flex-shrink-0">
+          <input
+            type="text"
+            value={newStaffName}
+            onChange={(e) => setNewStaffName(e.target.value)}
+            placeholder="新しい従業員名..."
+            className="px-3 py-1.5 md:py-2 text-sm md:text-base outline-none w-full md:w-48 bg-transparent"
+            onKeyDown={(e) => e.key === 'Enter' && handleAddStaff()}
+          />
+          <button
+            onClick={handleAddStaff}
+            disabled={!newStaffName.trim()}
+            className="flex items-center justify-center bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white font-medium px-3 py-1.5 md:py-2 rounded-md transition-colors text-sm whitespace-nowrap"
+          >
+            <UserPlus size={16} className="mr-1" />
+            追加
+          </button>
+        </div>
+      </div>
+
+      {/* ドラッグ＆ドロップ対応のリスト表示 (Divベース構造) */}
+      <div 
+        className="flex-1 md:max-h-[600px] overflow-y-auto relative bg-gray-50/30 scrollbar-thin scrollbar-thumb-gray-300"
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+        onPointerLeave={handlePointerUp}
+        style={{ touchAction: isDraggingRef.current ? 'none' : 'auto' }} 
+      >
+        <div className="min-w-[500px]">
+          {/* ヘッダー行 */}
+          <div className="sticky top-0 bg-white z-10 border-b border-gray-200 shadow-sm flex items-center px-4 py-3 text-xs md:text-sm font-bold text-gray-600">
+             <div className="w-10 md:w-12 text-center flex-shrink-0">順番</div>
+             <div className="w-16 md:w-24 pl-2 flex-shrink-0">ID</div>
+             <div className="flex-1 min-w-[120px]">名前</div>
+             <div className="w-24 md:w-28 text-center flex-shrink-0">フード対応</div>
+             <div className="w-12 md:w-16 text-center flex-shrink-0">削除</div>
+          </div>
+          
+          {/* データ行 */}
+          <div className="flex flex-col relative pb-8">
+            {staff.map((emp, index) => {
+              const isDragged = draggedIndex === index;
+              return (
+                <div
+                  key={emp.id}
+                  data-row-index={index}
+                  onPointerDown={(e) => handlePointerDown(e, index)}
+                  onContextMenu={(e) => e.preventDefault()} // スマホ長押し時のポップアップ防止
+                  className={`flex items-center px-4 py-3 border-b border-gray-100 bg-white select-none transition-all duration-300 ${
+                    isDragged 
+                      ? 'scale-[1.03] shadow-xl z-50 ring-2 ring-blue-400 opacity-95 rounded-lg -mx-1 my-1' 
+                      : 'hover:bg-blue-50/50 cursor-pointer'
+                  }`}
+                  style={{
+                    WebkitUserSelect: 'none',
+                    WebkitTouchCallout: 'none',
+                  }}
+                >
+                  <div className={`w-10 md:w-12 text-center text-xs font-mono flex-shrink-0 ${isDragged ? 'text-blue-500 font-bold' : 'text-gray-400'}`}>
+                    {index + 1}
+                  </div>
+                  <div className="w-16 md:w-24 pl-2 text-xs md:text-sm text-gray-500 font-mono flex-shrink-0">
+                    {emp.id}
+                  </div>
+                  <div className={`flex-1 text-sm md:text-base font-medium flex items-center min-w-[120px] ${isDragged ? 'text-blue-700' : 'text-gray-800'}`}>
+                    {emp.name}
+                  </div>
+                  <div className="w-24 md:w-28 flex justify-center flex-shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation(); // ドラッグ発火を防止
+                        toggleCookStatus(emp.id);
+                      }}
+                      className={`inline-flex items-center px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
+                        emp.canCook 
+                          ? 'bg-orange-100 text-orange-800 shadow-sm hover:bg-orange-200' 
+                          : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                      }`}
+                    >
+                      {emp.canCook ? (
+                        <><ChefHat size={14} className="mr-1" /> 対応可</>
+                      ) : (
+                        '不可'
+                      )}
+                    </button>
+                  </div>
+                  <div className="w-12 md:w-16 flex justify-center flex-shrink-0">
+                    <button
+                      onClick={(e) => {
+                         e.stopPropagation();
+                         handleDeleteStaff(emp.id);
+                      }}
+                      className="p-1.5 md:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      title="この従業員を削除"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+            
+            {staff.length === 0 && (
+              <div className="p-8 text-center text-gray-500 bg-gray-50/50">
+                従業員が登録されていません。「追加」から新しい従業員を登録してください。
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderSchedule = () => {
+    if (Object.keys(schedule).length === 0) {
+      return (
+        <div className="bg-white p-6 md:p-12 rounded-xl shadow-sm border border-gray-100 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
+          <Calendar size={48} className="text-gray-300 mb-4" />
+          <h2 className="text-lg md:text-xl font-bold text-gray-700 mb-2">シフトが未生成です</h2>
+          <p className="text-sm md:text-base text-gray-500 mb-6">ダッシュボードからシフトの自動生成を実行してください。</p>
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-md"
+          >
+            ダッシュボードへ
+          </button>
+        </div>
+      );
+    }
+
+    const daySchedule = schedule[selectedDay] || {};
+    const dayShortages = shortages[selectedDay] || [];
+
+    return (
+      <div className="space-y-4 md:space-y-6">
+        {/* 日付ナビゲーション */}
+        <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <button 
+            onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
+            disabled={selectedDay === 1}
+            className="w-full sm:w-auto flex items-center justify-center space-x-2 text-blue-600 disabled:text-gray-300 hover:bg-blue-50 px-3 py-2 rounded-lg bg-gray-50 sm:bg-transparent"
+          >
+            <ChevronLeft size={20} />
+            <span className="font-medium">前日</span>
+          </button>
+          
+          <h2 className="text-base md:text-xl font-bold text-gray-800 text-center order-first sm:order-none w-full sm:w-auto">
+            {targetYear}年 {targetMonth}月 {selectedDay}日 ({getDayOfWeek(selectedDay)})
+          </h2>
+          
+          <button 
+            onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
+            disabled={selectedDay === daysInMonth}
+            className="w-full sm:w-auto flex items-center justify-center space-x-2 text-blue-600 disabled:text-gray-300 hover:bg-blue-50 px-3 py-2 rounded-lg bg-gray-50 sm:bg-transparent"
+          >
+            <span className="font-medium">翌日</span>
+            <ChevronRight size={20} />
+          </button>
+        </div>
+
+        {/* アラート表示 */}
+        {dayShortages.length > 0 && (
+          <div className="bg-red-50 border-l-4 border-red-500 p-3 md:p-4 rounded-r-lg shadow-sm">
+            <div className="flex items-center space-x-2 text-red-700 mb-2 font-bold text-sm md:text-base">
+              <AlertTriangle size={20} className="flex-shrink-0" />
+              <span>注意: 条件を満たしていない時間帯があります</span>
+            </div>
+            <div className="max-h-32 overflow-y-auto">
+              <ul className="list-disc pl-5 space-y-1 text-xs md:text-sm text-red-600">
+                {dayShortages.map((shortage, idx) => (
+                  <li key={idx}>
+                    <strong className="whitespace-nowrap">{shortage.slot}:</strong> {shortage.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+        
+        {dayShortages.length === 0 && (
+          <div className="bg-green-50 border-l-4 border-green-500 p-3 md:p-4 rounded-r-lg shadow-sm flex items-center space-x-2 text-green-700">
+             <CheckCircle size={20} className="flex-shrink-0" />
+             <span className="font-medium text-sm md:text-base">この日のシフトはすべての条件（人数・フード担当）を満たしています。</span>
+          </div>
+        )}
+
+        {/* シフト表 */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="overflow-x-auto -mx-4 md:mx-0">
+            <div className="min-w-[650px] px-4 md:px-0">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-600 text-xs md:text-sm border-b border-gray-200">
+                    <th className="p-3 md:p-4 font-medium w-28 md:w-32 border-r border-gray-100 whitespace-nowrap">時間帯</th>
+                    <th className="p-3 md:p-4 font-medium text-center w-20 md:w-24 whitespace-nowrap">必要</th>
+                    <th className="p-3 md:p-4 font-medium text-center w-20 md:w-24 whitespace-nowrap">配置</th>
+                    <th className="p-3 md:p-4 font-medium">配置スタッフ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {TIME_SLOTS.map((slot) => {
+                    const assigned = daySchedule[slot] || [];
+                    const REQUIRED_STAFF = getRequiredStaffCount(slot);
+                    const hasShortage = dayShortages.some(s => s.slot === slot);
+                    const cookCount = assigned.filter(s => s.canCook).length;
+                    
+                    return (
+                      <tr key={slot} className={`hover:bg-gray-50 transition-colors ${hasShortage ? 'bg-red-50/30' : ''}`}>
+                        <td className="p-3 md:p-4 text-xs md:text-sm font-medium text-gray-700 border-r border-gray-100 bg-gray-50/50 whitespace-nowrap">
+                          <div className="flex items-center space-x-1 md:space-x-2">
+                            <Clock size={14} className="text-gray-400 hidden sm:block" />
+                            <span>{slot}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 md:p-4 text-center text-xs md:text-sm text-gray-500">
+                          {REQUIRED_STAFF}名
+                        </td>
+                        <td className="p-3 md:p-4 text-center">
+                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold ${
+                            assigned.length >= REQUIRED_STAFF ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          }`}>
+                            {assigned.length}名
+                          </span>
+                        </td>
+                        <td className="p-3 md:p-4">
+                          <div className="flex flex-wrap gap-1.5 md:gap-2">
+                            {assigned.map(emp => (
+                              <span 
+                                key={emp.id} 
+                                className={`inline-flex items-center px-2 py-1 md:px-3 md:py-1 rounded-lg text-xs md:text-sm border whitespace-nowrap ${
+                                  emp.canCook 
+                                    ? 'bg-orange-50 border-orange-200 text-orange-800' 
+                                    : 'bg-white border-gray-200 text-gray-700'
+                                }`}
+                              >
+                                {emp.canCook && <ChefHat size={12} className="mr-1 md:mr-1.5" />}
+                                {emp.name}
+                              </span>
+                            ))}
+                            {assigned.length === 0 && (
+                              <span className="text-xs md:text-sm text-gray-400 italic">配置なし</span>
+                            )}
+                          </div>
+                          {hasShortage && (
+                             <div className="mt-1 md:mt-2 text-[10px] md:text-xs text-red-500 font-medium flex flex-wrap gap-1 md:gap-2">
+                               {assigned.length < REQUIRED_STAFF && <span>・あと {REQUIRED_STAFF - assigned.length}名 必要</span>}
+                               {cookCount === 0 && <span>・フード担当が必要</span>}
+                             </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans">
+      {/* Header */}
+      <header className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 h-14 md:h-16 flex items-center justify-between">
+          <div className="flex items-center space-x-2 md:space-x-3 text-blue-600">
+            <Coffee size={24} className="md:w-7 md:h-7" />
+            <h1 className="text-lg md:text-xl font-bold tracking-tight">CafeShift Pro</h1>
+          </div>
+          <div className="hidden sm:block text-xs md:text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full font-medium">
+            店舗: 渋谷3丁目店 (シフト: 06:30 - 21:30)
+          </div>
+        </div>
+      </header>
+
+      <div className="max-w-7xl mx-auto px-4 py-4 md:py-8 flex flex-col md:flex-row gap-4 md:gap-8">
+        
+        {/* Navigation - Mobile Top Tabs / Desktop Sidebar */}
+        <aside className="w-full md:w-64 flex-shrink-0 z-10 md:z-auto bg-gray-50 md:bg-transparent sticky top-14 md:top-auto pt-2 md:pt-0 -mx-4 px-4 md:mx-0 md:px-0">
+          <nav className="flex md:flex-col space-x-2 md:space-x-0 md:space-y-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
+                activeTab === 'dashboard'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600 bg-white md:bg-transparent border md:border-none border-gray-200'
+              }`}
+            >
+              <Settings size={18} className="md:w-5 md:h-5" />
+              <span>ダッシュボード</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('trends')}
+              className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
+                activeTab === 'trends'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600 bg-white md:bg-transparent border md:border-none border-gray-200'
+              }`}
+            >
+              <BarChart2 size={18} className="md:w-5 md:h-5" />
+              <span>必要人数設定</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('input')}
+              className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
+                activeTab === 'input'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600 bg-white md:bg-transparent border md:border-none border-gray-200'
+              }`}
+            >
+              <Edit size={18} className="md:w-5 md:h-5" />
+              <span>希望シフト入力</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('staff')}
+              className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
+                activeTab === 'staff'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600 bg-white md:bg-transparent border md:border-none border-gray-200'
+              }`}
+            >
+              <Users size={18} className="md:w-5 md:h-5" />
+              <span>従業員管理</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('schedule')}
+              className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
+                activeTab === 'schedule'
+                  ? 'bg-blue-600 text-white shadow-md'
+                  : 'text-gray-600 hover:bg-blue-50 hover:text-blue-600 bg-white md:bg-transparent border md:border-none border-gray-200'
+              }`}
+            >
+              <Calendar size={18} className="md:w-5 md:h-5" />
+              <span>シフト表</span>
+            </button>
+          </nav>
+
+          {/* Quick Stats in sidebar (Hidden on mobile) */}
+          <div className="hidden md:block mt-8 bg-blue-50 p-4 rounded-xl border border-blue-100">
+            <h3 className="text-sm font-bold text-blue-800 mb-2">シフト最適化の制約</h3>
+            <ul className="text-xs space-y-2 text-blue-700">
+              <li className="flex items-center"><CheckCircle size={12} className="mr-1 flex-shrink-0" /> <span>【動的】時間帯ごとに必要人数が変動</span></li>
+              <li className="flex items-center"><CheckCircle size={12} className="mr-1 flex-shrink-0" /> <span>【必須】フード担当 最低1人</span></li>
+              <li className="flex items-center"><CheckCircle size={12} className="mr-1 flex-shrink-0" /> <span>【最適化】労働時間の平準化</span></li>
+            </ul>
+          </div>
+        </aside>
+
+        {/* Content Area */}
+        <main className="flex-1 min-w-0">
+          {activeTab === 'dashboard' && renderDashboard()}
+          {activeTab === 'trends' && renderTrends()}
+          {activeTab === 'input' && renderPreferenceForm()}
+          {activeTab === 'staff' && renderStaff()}
+          {activeTab === 'schedule' && renderSchedule()}
+        </main>
+
+      </div>
+    </div>
+  );
+}

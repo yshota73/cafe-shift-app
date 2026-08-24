@@ -91,6 +91,8 @@ export default function App() {
   
   // シフト入力フォーム用のステート
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(INITIAL_STAFF[0].id);
+  // 希望シフトの範囲選択 (開始タップ→終了タップで連続した1ブロックのみを設定)
+  const [rangeStart, setRangeStart] = useState(null);
   // 新規従業員追加用のステート
   const [newStaffName, setNewStaffName] = useState('');
 
@@ -106,6 +108,11 @@ export default function App() {
     };
   }, []);
 
+  // 従業員や日付の選択が変わったら、範囲選択の開始待ち状態をリセット
+  useEffect(() => {
+    setRangeStart(null);
+  }, [selectedEmployeeId, selectedDay]);
+
   const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
 
   const getDayOfWeek = (day) => {
@@ -117,56 +124,61 @@ export default function App() {
     const newSchedule = {};
     const newShortages = {};
 
+    // 月を通じた労働コマ数のトラッキング (労働時間平準化用: 月内で少ない人を優先的に採用)
+    const slotsWorkedMonth = {};
+    staff.forEach(emp => slotsWorkedMonth[emp.id] = 0);
+
     // 1日から月末日までループ
     for (let day = 1; day <= daysInMonth; day++) {
       newSchedule[day] = {};
+      TIME_SLOTS.forEach(slot => { newSchedule[day][slot] = []; });
       newShortages[day] = [];
 
-      // 制約1: 各従業員のその日の労働スロット数をトラッキング (労働時間平準化用)
-      const slotsWorked = {};
-      staff.forEach(emp => slotsWorked[emp.id] = 0);
+      // その日に希望シフト(連続した1ブロック)を出している従業員
+      const candidates = staff.filter(emp => (emp.preferences[day]?.length || 0) > 0);
+      // 1人1日1ブロックのみ: 一度採用した人はその日はもう選ばない
+      const assignedIds = new Set();
 
-      // 各時間帯についてループ
       TIME_SLOTS.forEach(slot => {
-        let assignedStaff = [];
         const REQUIRED_STAFF = getRequiredStaffCount(slot);
 
-        // その日に出勤希望を出している従業員を抽出 (最大勤務時間の制限は撤廃)
-        let available = staff.filter(emp => 
-          emp.preferences[day]?.includes(slot)
-        );
+        // 既にこのコマをカバーしている人数・フード担当数が満たされるまで、
+        // 「その日まだ未採用」かつ「連続希望ブロックがこのコマを含む」従業員を1ブロックまるごと追加していく
+        let needCook = newSchedule[day][slot].filter(s => s.canCook).length < 1;
+        let needMore = newSchedule[day][slot].length < REQUIRED_STAFF;
 
-        // 労働時間平準化のヒューリスティック: 労働時間が少ない人を優先
-        available.sort((a, b) => slotsWorked[a.id] - slotsWorked[b.id]);
+        while (needCook || needMore) {
+          const eligible = candidates.filter(emp =>
+            !assignedIds.has(emp.id) && emp.preferences[day].includes(slot)
+          );
+          if (eligible.length === 0) break; // これ以上補充できる人がいない
 
-        // フード担当可能と不可能で分ける
-        const availableCooks = available.filter(emp => emp.canCook);
-        const availableNonCooks = available.filter(emp => !emp.canCook);
+          // フード担当が必要ならフード担当者を優先、いなければ全員から選ぶ
+          let pool = needCook ? eligible.filter(emp => emp.canCook) : eligible;
+          if (pool.length === 0) pool = eligible;
 
-        // 1. フード担当を最低1名配置 (ハード制約)
-        if (availableCooks.length > 0) {
-          const cook = availableCooks[0];
-          assignedStaff.push(cook);
-          slotsWorked[cook.id]++;
-          availableCooks.shift(); // 配置済みの人を除外
+          // 月内の労働コマ数が少ない人を優先 (労働時間の平準化)
+          pool.sort((a, b) => slotsWorkedMonth[a.id] - slotsWorkedMonth[b.id]);
+          const chosen = pool[0];
+
+          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)
+          const block = chosen.preferences[day];
+          block.forEach(s => newSchedule[day][s].push(chosen));
+          slotsWorkedMonth[chosen.id] += block.length;
+          assignedIds.add(chosen.id);
+
+          needCook = newSchedule[day][slot].filter(s => s.canCook).length < 1;
+          needMore = newSchedule[day][slot].length < REQUIRED_STAFF;
         }
+      });
 
-        // 残りの利用可能なスタッフを統合して再度労働時間でソート
-        let remainingAvailable = [...availableCooks, ...availableNonCooks]
-          .sort((a, b) => slotsWorked[a.id] - slotsWorked[b.id]);
-
-        // 2. 必要人数を満たすように残りのスタッフを追加 (ハード制約)
-        let targetStaffCount = Math.max(0, REQUIRED_STAFF - assignedStaff.length);
-        for (let i = 0; i < targetStaffCount && i < remainingAvailable.length; i++) {
-          const emp = remainingAvailable[i];
-          assignedStaff.push(emp);
-          slotsWorked[emp.id]++;
-        }
-
-        // 3. 人数・スキル不足チェックと記録
+      // 人数・スキル不足チェックと記録
+      TIME_SLOTS.forEach(slot => {
+        const assignedStaff = newSchedule[day][slot];
+        const REQUIRED_STAFF = getRequiredStaffCount(slot);
         const cookCount = assignedStaff.filter(s => s.canCook).length;
         if (cookCount < 1) {
-           newShortages[day].push({
+          newShortages[day].push({
             slot,
             reason: 'フード担当者が必要 (現状0人)'
           });
@@ -177,32 +189,40 @@ export default function App() {
             reason: `人数不足 (現在${assignedStaff.length}人 / 最低${REQUIRED_STAFF}人必要)`
           });
         }
-
-        newSchedule[day][slot] = assignedStaff;
       });
     }
 
     setSchedule(newSchedule);
     setShortages(newShortages);
     // シフト生成後は自動的にシフト表タブへ遷移
-    setActiveTab('schedule'); 
+    setActiveTab('schedule');
   };
 
-  const togglePreference = (empId, day, slot) => {
-    setStaff(prev => prev.map(emp => {
-      if (emp.id !== empId) return emp;
-      const dayPrefs = emp.preferences[day] || [];
-      const isSelected = dayPrefs.includes(slot);
-      return {
+  const handlePreferenceSlotClick = (empId, day, slotIndex) => {
+    if (rangeStart === null) {
+      setRangeStart(slotIndex);
+      return;
+    }
+    const startIdx = Math.min(rangeStart, slotIndex);
+    const endIdx = Math.max(rangeStart, slotIndex);
+    const block = TIME_SLOTS.slice(startIdx, endIdx + 1);
+    setStaff(prev => prev.map(emp =>
+      emp.id !== empId ? emp : {
         ...emp,
-        preferences: {
-          ...emp.preferences,
-          [day]: isSelected 
-            ? dayPrefs.filter(s => s !== slot) 
-            : [...dayPrefs, slot]
-        }
-      };
-    }));
+        preferences: { ...emp.preferences, [day]: block }
+      }
+    ));
+    setRangeStart(null);
+  };
+
+  const clearPreferenceDay = (empId, day) => {
+    setStaff(prev => prev.map(emp =>
+      emp.id !== empId ? emp : {
+        ...emp,
+        preferences: { ...emp.preferences, [day]: [] }
+      }
+    ));
+    setRangeStart(null);
   };
 
   const toggleCookStatus = (empId) => {
@@ -523,7 +543,7 @@ export default function App() {
               {selectedEmp?.name} さんの希望シフト
             </h2>
             <div className="flex items-center justify-between sm:justify-center space-x-2 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
-               <button 
+               <button
                   onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
                   className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
                 >
@@ -532,7 +552,7 @@ export default function App() {
                 <span className="font-medium w-32 md:w-28 text-center text-sm md:text-base">
                   {targetMonth}/{selectedDay} ({getDayOfWeek(selectedDay)})
                 </span>
-                <button 
+                <button
                   onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
                   className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
                 >
@@ -540,20 +560,45 @@ export default function App() {
                 </button>
             </div>
           </div>
-          
-          <p className="text-xs md:text-sm text-gray-500 mb-4 bg-blue-50 p-3 rounded-lg">出勤可能な時間帯をタップして選択してください。（複数選択可）</p>
+
+          <div className="flex items-center justify-between gap-2 mb-4 bg-blue-50 p-3 rounded-lg">
+            <p className="text-xs md:text-sm text-blue-700">
+              {rangeStart === null
+                ? '出勤する開始の時間帯をタップしてください。（連続した1ブロックのみ選択可）'
+                : `開始: ${TIME_SLOTS[rangeStart]} ／ 終了の時間帯をタップしてください。`}
+            </p>
+            <div className="flex-shrink-0 flex items-center gap-2">
+              {rangeStart !== null && (
+                <button
+                  onClick={() => setRangeStart(null)}
+                  className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap"
+                >
+                  キャンセル
+                </button>
+              )}
+              <button
+                onClick={() => clearPreferenceDay(selectedEmp.id, selectedDay)}
+                className="text-xs font-medium text-red-500 hover:text-red-700 whitespace-nowrap"
+              >
+                この日をクリア
+              </button>
+            </div>
+          </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3 h-[400px] md:h-[450px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-300">
-            {TIME_SLOTS.map(slot => {
+            {TIME_SLOTS.map((slot, slotIndex) => {
               const isSelected = selectedEmp?.preferences[selectedDay]?.includes(slot);
+              const isPendingStart = rangeStart === slotIndex;
               return (
                 <button
                   key={slot}
-                  onClick={() => togglePreference(selectedEmp.id, selectedDay, slot)}
+                  onClick={() => handlePreferenceSlotClick(selectedEmp.id, selectedDay, slotIndex)}
                   className={`py-2 md:py-3 px-1 md:px-2 text-xs md:text-sm rounded-lg border-2 transition-all font-medium ${
-                    isSelected 
-                      ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm' 
-                      : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
+                    isPendingStart
+                      ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
+                      : isSelected
+                        ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
                   }`}
                 >
                   {slot}
@@ -785,7 +830,7 @@ export default function App() {
             <table className="border-collapse text-xs">
               <thead>
                 <tr>
-                  <th className="sticky left-0 top-14 md:top-16 z-20 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 whitespace-nowrap">
+                  <th className="sticky left-0 top-14 md:top-16 z-30 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 whitespace-nowrap">
                     スタッフ ({workingStaff.length}名)
                   </th>
                   {TIME_SLOTS.map(slot => {
@@ -794,7 +839,7 @@ export default function App() {
                     return (
                       <th
                         key={slot}
-                        className={`sticky top-14 md:top-16 z-10 bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
+                        className={`sticky top-14 md:top-16 z-20 bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
                       >
                         {isHour && (
                           <span className="block text-[9px] text-gray-500 pb-1">{start.substring(0, 2)}</span>

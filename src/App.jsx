@@ -827,10 +827,10 @@ export default function App() {
             <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-blue-400 mr-1.5"></span>フード対応不可</span>
           </div>
           <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300">
-            <table className="border-collapse text-xs">
+            <table className="border-separate border-spacing-0 table-fixed text-xs">
               <thead>
                 <tr>
-                  <th className="sticky left-0 top-14 md:top-16 z-30 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 whitespace-nowrap">
+                  <th className="sticky left-0 top-14 md:top-16 z-30 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 overflow-hidden whitespace-nowrap text-ellipsis">
                     スタッフ ({workingStaff.length}名)
                   </th>
                   {TIME_SLOTS.map(slot => {
@@ -854,7 +854,7 @@ export default function App() {
                   const flags = TIME_SLOTS.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
                   return (
                     <tr key={emp.id} className="hover:bg-gray-50">
-                      <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 whitespace-nowrap">
+                      <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 overflow-hidden whitespace-nowrap">
                         <div className="flex items-center gap-1.5 text-gray-700 font-medium">
                           {emp.canCook && <ChefHat size={12} className="text-orange-500 flex-shrink-0" />}
                           <span className="truncate">{emp.name}</span>

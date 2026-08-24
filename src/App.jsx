@@ -39,11 +39,18 @@ const STAFF_NAMES = [
   '山岸優澄', '保科美琴', '熊崎卓', '服部果歩', '渡瀬愛子', '正木乃彩', '谷野愛莉', '岩佐珠希'
 ];
 
+// 希望シフトを提出する20名 (フード担当[0-16]・非対応[17-31]の実際の比率に近い形で抽出し、
+// 提出者がフード担当に偏らないようにする)
+const PREFERENCE_SUBMITTER_INDICES = new Set([
+  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, // フード担当から11名
+  17, 18, 19, 20, 21, 22, 23, 24, 25 // 非対応から9名
+]);
+
 // 31日分のダミー希望シフトを生成する関数 (よくばらけた状態を作る)
 const generateDummyPreferences = (empIndex) => {
   const prefs = {};
-  // 32人のうち、最初の20人だけが希望シフトを提出している状態にする
-  if (empIndex >= 20) return prefs;
+  // 32人のうち、上記の20人だけが希望シフトを提出している状態にする
+  if (!PREFERENCE_SUBMITTER_INDICES.has(empIndex)) return prefs;
 
   // 1日〜31日までダミーデータを生成
   for (let day = 1; day <= 31; day++) {

@@ -33,14 +33,29 @@ const BREAK_LENGTH_SLOTS = 2;    // 休憩1時間 = 30分コマ2個
 const EDGE_GUARD_SLOTS = 2;      // 勤務の最初と最後の1時間は休憩を避ける
 
 // 勤務ブロック(連続した TIME_SLOTS の配列)から、休憩として除外する時間帯を返す。
-// 6時間未満の勤務は休憩なし。休憩は最初と最後の1時間を避けた範囲の中央に1時間分配置する。
+// 6時間未満の勤務は休憩なし。最初と最後の1時間を避けた範囲の中で、
+// 必要人数が少ない (=混雑ピークでない) 時間帯を優先して1時間の休憩を配置し、
+// 人員不足が発生しにくいようにする。必要人数が同点の場合は中央付近を優先する。
 const getBreakSlots = (block) => {
   if (block.length < BREAK_ELIGIBLE_SLOTS) return [];
   const earliestStart = EDGE_GUARD_SLOTS;
   const latestStart = block.length - EDGE_GUARD_SLOTS - BREAK_LENGTH_SLOTS;
   if (latestStart < earliestStart) return [];
-  const breakStartIdx = earliestStart + Math.floor((latestStart - earliestStart) / 2);
-  return block.slice(breakStartIdx, breakStartIdx + BREAK_LENGTH_SLOTS);
+
+  const midpoint = earliestStart + (latestStart - earliestStart) / 2;
+  let bestStartIdx = earliestStart;
+  let bestScore = Infinity;
+  for (let startIdx = earliestStart; startIdx <= latestStart; startIdx++) {
+    const candidate = block.slice(startIdx, startIdx + BREAK_LENGTH_SLOTS);
+    const demand = candidate.reduce((sum, s) => sum + getRequiredStaffCount(s), 0);
+    const distanceFromMiddle = Math.abs(startIdx - midpoint);
+    const score = demand * 100 + distanceFromMiddle; // 必要人数の少なさを最優先、同点なら中央寄り
+    if (score < bestScore) {
+      bestScore = score;
+      bestStartIdx = startIdx;
+    }
+  }
+  return block.slice(bestStartIdx, bestStartIdx + BREAK_LENGTH_SLOTS);
 };
 
 // 曜日配列

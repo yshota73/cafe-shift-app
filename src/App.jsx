@@ -97,7 +97,9 @@ export default function App() {
   const [targetYear, setTargetYear] = useState(new Date().getFullYear());
   const [targetMonth, setTargetMonth] = useState(new Date().getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(1);
-  
+  // シフト表ページの日付ピッカー（カレンダー）の開閉状態
+  const [showDayPicker, setShowDayPicker] = useState(false);
+
   // シフト入力フォーム用のステート
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(INITIAL_STAFF[0].id);
   // 希望シフトの範囲選択 (開始タップ→終了タップで連続した1ブロックのみを設定)
@@ -804,6 +806,7 @@ export default function App() {
       (daySchedule[slot] || []).forEach(emp => workingStaffIds.add(emp.id));
     });
     const workingStaff = staff.filter(emp => workingStaffIds.has(emp.id));
+    const firstDayOfWeek = new Date(targetYear, targetMonth - 1, 1).getDay();
 
     return (
       <div className="space-y-4 md:space-y-6">
@@ -818,12 +821,47 @@ export default function App() {
             <ChevronLeft size={20} />
             <span className="font-medium">前日</span>
           </button>
-          
-          <h2 className="text-base md:text-xl font-bold text-gray-800 text-center order-first sm:order-none w-full sm:w-auto">
-            {targetYear}年 {targetMonth}月 {selectedDay}日 ({getDayOfWeek(selectedDay)})
-          </h2>
-          
-          <button 
+
+          <div className="relative order-first sm:order-none">
+            <button
+              onClick={() => setShowDayPicker(prev => !prev)}
+              className="flex items-center justify-center gap-2 text-base md:text-xl font-bold text-gray-800 hover:text-blue-600 px-2 py-1 rounded-lg"
+            >
+              <span>{targetYear}年 {targetMonth}月 {selectedDay}日 ({getDayOfWeek(selectedDay)})</span>
+              <Calendar size={18} className="text-gray-400" />
+            </button>
+
+            {showDayPicker && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowDayPicker(false)}></div>
+                <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-3 w-64">
+                  <div className="grid grid-cols-7 gap-1 mb-1 text-center text-[10px] font-medium text-gray-400">
+                    {DAYS_OF_WEEK.map(d => <div key={d}>{d}</div>)}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: firstDayOfWeek }).map((_, i) => (
+                      <div key={`empty-${i}`} />
+                    ))}
+                    {Array.from({ length: daysInMonth }, (_, i) => i + 1).map(day => (
+                      <button
+                        key={day}
+                        onClick={() => { setSelectedDay(day); setShowDayPicker(false); }}
+                        className={`aspect-square rounded-lg text-sm flex items-center justify-center transition-colors ${
+                          day === selectedDay
+                            ? 'bg-blue-600 text-white font-bold'
+                            : 'hover:bg-blue-50 text-gray-700'
+                        }`}
+                      >
+                        {day}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <button
             onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
             disabled={selectedDay === daysInMonth}
             className="w-full sm:w-auto flex items-center justify-center space-x-2 text-blue-600 disabled:text-gray-300 hover:bg-blue-50 px-3 py-2 rounded-lg bg-gray-50 sm:bg-transparent"

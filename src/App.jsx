@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
-  Users, Calendar, Clock, AlertTriangle, CheckCircle,
+  Users, Calendar, AlertTriangle, CheckCircle,
   Settings, ChevronRight, ChevronLeft,
   Coffee, ChefHat, Edit, BarChart2,
   ArrowUp, ArrowDown, Trash2, UserPlus, GripVertical
@@ -715,6 +715,13 @@ export default function App() {
     const daySchedule = schedule[selectedDay] || {};
     const dayShortages = shortages[selectedDay] || [];
 
+    // その日に1コマでも配置されているスタッフを抽出（元の並び順を維持）
+    const workingStaffIds = new Set();
+    TIME_SLOTS.forEach(slot => {
+      (daySchedule[slot] || []).forEach(emp => workingStaffIds.add(emp.id));
+    });
+    const workingStaff = staff.filter(emp => workingStaffIds.has(emp.id));
+
     return (
       <div className="space-y-4 md:space-y-6">
         {/* 日付ナビゲーション */}
@@ -768,76 +775,77 @@ export default function App() {
           </div>
         )}
 
-        {/* シフト表 */}
+        {/* シフト表（スタッフ×時間のガントチャート） */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="overflow-x-auto -mx-4 md:mx-0">
-            <div className="min-w-[650px] px-4 md:px-0">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-gray-600 text-xs md:text-sm border-b border-gray-200">
-                    <th className="p-3 md:p-4 font-medium w-28 md:w-32 border-r border-gray-100 whitespace-nowrap">時間帯</th>
-                    <th className="p-3 md:p-4 font-medium text-center w-20 md:w-24 whitespace-nowrap">必要</th>
-                    <th className="p-3 md:p-4 font-medium text-center w-20 md:w-24 whitespace-nowrap">配置</th>
-                    <th className="p-3 md:p-4 font-medium">配置スタッフ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {TIME_SLOTS.map((slot) => {
-                    const assigned = daySchedule[slot] || [];
-                    const REQUIRED_STAFF = getRequiredStaffCount(slot);
-                    const hasShortage = dayShortages.some(s => s.slot === slot);
-                    const cookCount = assigned.filter(s => s.canCook).length;
-                    
+          <div className="p-3 md:p-4 border-b border-gray-100 flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+            <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-orange-400 mr-1.5"></span>フード対応可</span>
+            <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-blue-400 mr-1.5"></span>フード対応不可</span>
+          </div>
+          <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300">
+            <table className="border-collapse text-xs">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 top-14 md:top-16 z-20 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 whitespace-nowrap">
+                    スタッフ ({workingStaff.length}名)
+                  </th>
+                  {TIME_SLOTS.map(slot => {
+                    const start = slot.substring(0, 5);
+                    const isHour = start.endsWith(':00');
                     return (
-                      <tr key={slot} className={`hover:bg-gray-50 transition-colors ${hasShortage ? 'bg-red-50/30' : ''}`}>
-                        <td className="p-3 md:p-4 text-xs md:text-sm font-medium text-gray-700 border-r border-gray-100 bg-gray-50/50 whitespace-nowrap">
-                          <div className="flex items-center space-x-1 md:space-x-2">
-                            <Clock size={14} className="text-gray-400 hidden sm:block" />
-                            <span>{slot}</span>
-                          </div>
-                        </td>
-                        <td className="p-3 md:p-4 text-center text-xs md:text-sm text-gray-500">
-                          {REQUIRED_STAFF}名
-                        </td>
-                        <td className="p-3 md:p-4 text-center">
-                          <span className={`inline-flex px-2 py-1 rounded-full text-xs font-bold ${
-                            assigned.length >= REQUIRED_STAFF ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                          }`}>
-                            {assigned.length}名
-                          </span>
-                        </td>
-                        <td className="p-3 md:p-4">
-                          <div className="flex flex-wrap gap-1.5 md:gap-2">
-                            {assigned.map(emp => (
-                              <span 
-                                key={emp.id} 
-                                className={`inline-flex items-center px-2 py-1 md:px-3 md:py-1 rounded-lg text-xs md:text-sm border whitespace-nowrap ${
-                                  emp.canCook 
-                                    ? 'bg-orange-50 border-orange-200 text-orange-800' 
-                                    : 'bg-white border-gray-200 text-gray-700'
-                                }`}
-                              >
-                                {emp.canCook && <ChefHat size={12} className="mr-1 md:mr-1.5" />}
-                                {emp.name}
-                              </span>
-                            ))}
-                            {assigned.length === 0 && (
-                              <span className="text-xs md:text-sm text-gray-400 italic">配置なし</span>
-                            )}
-                          </div>
-                          {hasShortage && (
-                             <div className="mt-1 md:mt-2 text-[10px] md:text-xs text-red-500 font-medium flex flex-wrap gap-1 md:gap-2">
-                               {assigned.length < REQUIRED_STAFF && <span>・あと {REQUIRED_STAFF - assigned.length}名 必要</span>}
-                               {cookCount === 0 && <span>・フード担当が必要</span>}
-                             </div>
-                          )}
-                        </td>
-                      </tr>
+                      <th
+                        key={slot}
+                        className={`sticky top-14 md:top-16 z-10 bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
+                      >
+                        {isHour && (
+                          <span className="block text-[9px] text-gray-500 pb-1">{start.substring(0, 2)}</span>
+                        )}
+                      </th>
                     );
                   })}
-                </tbody>
-              </table>
-            </div>
+                </tr>
+              </thead>
+              <tbody>
+                {workingStaff.map(emp => {
+                  const flags = TIME_SLOTS.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
+                  return (
+                    <tr key={emp.id} className="hover:bg-gray-50">
+                      <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5 text-gray-700 font-medium">
+                          {emp.canCook && <ChefHat size={12} className="text-orange-500 flex-shrink-0" />}
+                          <span className="truncate">{emp.name}</span>
+                        </div>
+                      </td>
+                      {TIME_SLOTS.map((slot, i) => {
+                        const working = flags[i];
+                        const isHour = slot.substring(0, 5).endsWith(':00');
+                        const prevWorking = i > 0 && flags[i - 1];
+                        const nextWorking = i < flags.length - 1 && flags[i + 1];
+                        return (
+                          <td
+                            key={slot}
+                            className={`p-0 border-b border-gray-100 h-9 w-6 ${isHour && !prevWorking ? 'border-l border-gray-200' : ''}`}
+                          >
+                            {working && (
+                              <div
+                                title={`${emp.name} / ${slot}`}
+                                className={`h-6 my-1.5 ${emp.canCook ? 'bg-orange-400' : 'bg-blue-400'} ${!prevWorking ? 'rounded-l-full ml-0.5' : ''} ${!nextWorking ? 'rounded-r-full mr-0.5' : ''}`}
+                              ></div>
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+                {workingStaff.length === 0 && (
+                  <tr>
+                    <td colSpan={TIME_SLOTS.length + 1} className="p-8 text-center text-gray-400 text-sm">
+                      この日に出勤予定のスタッフはいません。
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

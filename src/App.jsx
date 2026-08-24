@@ -76,7 +76,7 @@ const generateDummyPreferences = (empIndex) => {
 const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
   id: `EMP${String(i + 1).padStart(3, '0')}`,
   name: name,
-  canCook: i < 12, // 最初の12人がフード担当可能
+  canCook: i < 17, // 最初の17人がフード担当可能
   preferences: generateDummyPreferences(i)
 }));
 
@@ -856,8 +856,8 @@ export default function App() {
                     <tr key={emp.id} className="hover:bg-gray-50">
                       <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 overflow-hidden whitespace-nowrap">
                         <div className="flex items-center gap-1.5 text-gray-700 font-medium">
-                          {emp.canCook && <ChefHat size={12} className="text-orange-500 flex-shrink-0" />}
                           <span className="truncate">{emp.name}</span>
+                          {emp.canCook && <ChefHat size={12} className="text-orange-500 flex-shrink-0" />}
                         </div>
                       </td>
                       {TIME_SLOTS.map((slot, i) => {

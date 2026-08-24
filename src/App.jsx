@@ -72,14 +72,11 @@ const generateDummyPreferences = (empIndex) => {
   return prefs;
 };
 
-// フード担当可能な従業員のインデックス (指名の5名 + 元からの担当者を絞って非対応者の割合を増やす)
-const COOK_STAFF_INDICES = new Set([0, 1, 2, 3, 4, 5, 6, 7, 12, 13, 14, 15, 16]);
-
-// 初期データ生成: 従業員32名 (うちフード担当13名)
+// 初期データ生成: 従業員32名 (うちフード担当17名)
 const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
   id: `EMP${String(i + 1).padStart(3, '0')}`,
   name: name,
-  canCook: COOK_STAFF_INDICES.has(i),
+  canCook: i < 17, // 最初の17人がフード担当可能
   preferences: generateDummyPreferences(i)
 }));
 
@@ -156,8 +153,11 @@ export default function App() {
           );
           if (eligible.length === 0) break; // これ以上補充できる人がいない
 
-          // フード担当が必要ならフード担当者を優先、いなければ全員から選ぶ
-          let pool = needCook ? eligible.filter(emp => emp.canCook) : eligible;
+          // フード担当が必要ならフード担当者を優先。頭数を埋めるだけの場合は、
+          // 生成されるシフト表がフード担当に偏らないよう非対応者を優先する
+          let pool = needCook
+            ? eligible.filter(emp => emp.canCook)
+            : eligible.filter(emp => !emp.canCook);
           if (pool.length === 0) pool = eligible;
 
           // 月内の労働コマ数が少ない人を優先 (労働時間の平準化)

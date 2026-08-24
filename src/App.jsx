@@ -87,6 +87,12 @@ const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
   preferences: generateDummyPreferences(i)
 }));
 
+// 希望シフト入力画面の初期選択: 1日目にシフト希望を出している人のうち、一覧の一番上に来る人
+// (従業員選択リストは希望シフトがある人が上に並ぶため、それに合わせる)
+const DEFAULT_SELECTED_EMPLOYEE_ID = (
+  INITIAL_STAFF.find(emp => (emp.preferences[1]?.length || 0) > 0) || INITIAL_STAFF[0]
+).id;
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [staff, setStaff] = useState(INITIAL_STAFF);
@@ -101,7 +107,7 @@ export default function App() {
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   // シフト入力フォーム用のステート
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(INITIAL_STAFF[0].id);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(DEFAULT_SELECTED_EMPLOYEE_ID);
   // 希望シフトの範囲選択 (開始タップ→終了タップで連続した1ブロックのみを設定)
   const [rangeStart, setRangeStart] = useState(null);
   // 新規従業員追加用のステート

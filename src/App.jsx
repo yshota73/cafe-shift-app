@@ -28,6 +28,21 @@ const getRequiredStaffCount = (slot) => {
   return 3; // その他の時間は基本3名
 };
 
+const BREAK_ELIGIBLE_SLOTS = 12; // 6時間 = 30分コマ12個以上で休憩対象
+const BREAK_LENGTH_SLOTS = 2;    // 休憩1時間 = 30分コマ2個
+const EDGE_GUARD_SLOTS = 2;      // 勤務の最初と最後の1時間は休憩を避ける
+
+// 勤務ブロック(連続した TIME_SLOTS の配列)から、休憩として除外する時間帯を返す。
+// 6時間未満の勤務は休憩なし。休憩は最初と最後の1時間を避けた範囲の中央に1時間分配置する。
+const getBreakSlots = (block) => {
+  if (block.length < BREAK_ELIGIBLE_SLOTS) return [];
+  const earliestStart = EDGE_GUARD_SLOTS;
+  const latestStart = block.length - EDGE_GUARD_SLOTS - BREAK_LENGTH_SLOTS;
+  if (latestStart < earliestStart) return [];
+  const breakStartIdx = earliestStart + Math.floor((latestStart - earliestStart) / 2);
+  return block.slice(breakStartIdx, breakStartIdx + BREAK_LENGTH_SLOTS);
+};
+
 // 曜日配列
 const DAYS_OF_WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 
@@ -193,10 +208,13 @@ export default function App() {
           pool.sort((a, b) => slotsWorkedMonth[a.id] - slotsWorkedMonth[b.id]);
           const chosen = pool[0];
 
-          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)
+          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)。
+          // 6時間以上の勤務になる場合は、最初と最後の1時間を避けて1時間の休憩を除外する。
           const block = chosen.preferences[day];
-          block.forEach(s => newSchedule[day][s].push(chosen));
-          slotsWorkedMonth[chosen.id] += block.length;
+          const breakSlots = getBreakSlots(block);
+          const workingSlots = block.filter(s => !breakSlots.includes(s));
+          workingSlots.forEach(s => newSchedule[day][s].push(chosen));
+          slotsWorkedMonth[chosen.id] += workingSlots.length;
           assignedIds.add(chosen.id);
 
           needCook = newSchedule[day][slot].filter(s => s.canCook).length < 1;
@@ -926,6 +944,7 @@ export default function App() {
           <div className="p-3 md:p-4 border-b border-gray-100 flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
             <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-orange-400 mr-1.5"></span>フード対応可</span>
             <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-blue-400 mr-1.5"></span>フード対応不可</span>
+            <span className="flex items-center"><span className="inline-block w-3 h-1.5 rounded-full bg-gray-300 mr-1.5"></span>休憩（6時間以上勤務の場合に1時間）</span>
           </div>
           <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300">
             <table className="border-separate border-spacing-0 table-fixed text-xs">
@@ -955,9 +974,23 @@ export default function App() {
                   const flags = TIME_SLOTS.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
                   const firstIdx = flags.indexOf(true);
                   const lastIdx = flags.lastIndexOf(true);
+
+                  // 勤務範囲内で働いていないコマ = 休憩 (勤務は必ず1ブロックで組まれるため、範囲内の空白は休憩のみ)
+                  const breakRange = firstIdx === -1 ? null : (() => {
+                    const idx = flags.findIndex((v, i) => !v && i > firstIdx && i < lastIdx);
+                    if (idx === -1) return null;
+                    let end = idx;
+                    while (end + 1 < lastIdx && !flags[end + 1]) end++;
+                    return [idx, end];
+                  })();
+
                   const shiftLabel = firstIdx === -1
                     ? ''
-                    : `${emp.name}: ${TIME_SLOTS[firstIdx].split(' - ')[0]} 〜 ${TIME_SLOTS[lastIdx].split(' - ')[1]}`;
+                    : `${emp.name}: ${TIME_SLOTS[firstIdx].split(' - ')[0]} 〜 ${TIME_SLOTS[lastIdx].split(' - ')[1]}`
+                      + (breakRange
+                        ? ` (休憩 ${TIME_SLOTS[breakRange[0]].split(' - ')[0]} 〜 ${TIME_SLOTS[breakRange[1]].split(' - ')[1]})`
+                        : '');
+
                   return (
                     <tr key={emp.id} className="hover:bg-gray-50">
                       <td className="sticky left-0 z-10 bg-white p-2 border-b border-r border-gray-100 overflow-hidden whitespace-nowrap">
@@ -968,6 +1001,7 @@ export default function App() {
                       </td>
                       {TIME_SLOTS.map((slot, i) => {
                         const working = flags[i];
+                        const isBreak = breakRange && i >= breakRange[0] && i <= breakRange[1];
                         const isHour = slot.substring(0, 5).endsWith(':00');
                         const prevWorking = i > 0 && flags[i - 1];
                         const nextWorking = i < flags.length - 1 && flags[i + 1];
@@ -980,6 +1014,12 @@ export default function App() {
                               <div
                                 title={shiftLabel}
                                 className={`h-6 my-1.5 ${emp.canCook ? 'bg-orange-400' : 'bg-blue-400'} ${!prevWorking ? 'rounded-l-full ml-0.5' : ''} ${!nextWorking ? 'rounded-r-full mr-0.5' : ''}`}
+                              ></div>
+                            )}
+                            {isBreak && (
+                              <div
+                                title={shiftLabel}
+                                className="h-1.5 my-[15px] mx-1 rounded-full bg-gray-300"
                               ></div>
                             )}
                           </td>

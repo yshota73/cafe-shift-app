@@ -87,11 +87,6 @@ const INITIAL_STAFF = STAFF_NAMES.map((name, i) => ({
   preferences: generateDummyPreferences(i)
 }));
 
-// 希望シフト入力画面の初期選択: 1日目にシフト希望を出している人のうち、一覧の一番上に来る人
-// (従業員選択リストは希望シフトがある人が上に並ぶため、それに合わせる)
-const DEFAULT_SELECTED_EMPLOYEE_ID = (
-  INITIAL_STAFF.find(emp => (emp.preferences[1]?.length || 0) > 0) || INITIAL_STAFF[0]
-).id;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -107,7 +102,7 @@ export default function App() {
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   // シフト入力フォーム用のステート
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(DEFAULT_SELECTED_EMPLOYEE_ID);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   // 希望シフトの範囲選択 (開始タップ→終了タップで連続した1ブロックのみを設定)
   const [rangeStart, setRangeStart] = useState(null);
   // 新規従業員追加用のステート
@@ -117,6 +112,13 @@ export default function App() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const dragTimeoutRef = useRef(null);
   const isDraggingRef = useRef(false);
+
+  // 「日付が変わった時だけ」自動選択の再計算に使う最新の staff を保持する Ref
+  // (依存配列を selectedDay のみにするため、staff の変化そのものでは再実行させない)
+  const staffRef = useRef(staff);
+  useEffect(() => {
+    staffRef.current = staff;
+  });
 
   // コンポーネント破棄時にタイマーをクリーンアップ
   useEffect(() => {
@@ -129,6 +131,14 @@ export default function App() {
   useEffect(() => {
     setRangeStart(null);
   }, [selectedEmployeeId, selectedDay]);
+
+  // 日付が変わったら、その日にシフト希望を出している人のうち一覧の一番上に来る人を自動選択する。
+  // staff の更新（希望シフトの編集など）では再実行したくないため、依存配列は selectedDay のみにする。
+  useEffect(() => {
+    const currentStaff = staffRef.current;
+    const topStaffForDay = currentStaff.find(emp => (emp.preferences[selectedDay]?.length || 0) > 0) || currentStaff[0];
+    setSelectedEmployeeId(topStaffForDay?.id ?? null);
+  }, [selectedDay]);
 
   const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
 

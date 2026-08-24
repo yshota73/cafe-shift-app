@@ -92,6 +92,8 @@ export default function App() {
   const [staff, setStaff] = useState(INITIAL_STAFF);
   const [schedule, setSchedule] = useState({});
   const [shortages, setShortages] = useState({});
+  // 現在の schedule/shortages がどの年月分として生成されたか (対象月の切替時に古いデータと区別するため)
+  const [scheduledMonth, setScheduledMonth] = useState(null);
   const [targetYear, setTargetYear] = useState(new Date().getFullYear());
   const [targetMonth, setTargetMonth] = useState(new Date().getMonth() + 1);
   const [selectedDay, setSelectedDay] = useState(1);
@@ -204,6 +206,7 @@ export default function App() {
 
     setSchedule(newSchedule);
     setShortages(newShortages);
+    setScheduledMonth({ year: targetYear, month: targetMonth });
     // シフト生成後は自動的にシフト表タブへ遷移
     setActiveTab('schedule');
   };
@@ -751,18 +754,34 @@ export default function App() {
   );
 
   const renderSchedule = () => {
-    if (Object.keys(schedule).length === 0) {
+    const isCurrentMonthGenerated = scheduledMonth
+      && scheduledMonth.year === targetYear
+      && scheduledMonth.month === targetMonth;
+
+    // 対象月ナビゲーション (シフト表ページでも月を切り替えられるようにする)
+    const monthNav = (
+      <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 flex items-center justify-center space-x-2 md:space-x-4">
+        <button onClick={() => changeMonth(-1)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><ChevronLeft size={20} /></button>
+        <span className="text-lg md:text-xl font-bold w-32 md:w-40 text-center">{targetYear}年 {targetMonth}月</span>
+        <button onClick={() => changeMonth(1)} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200"><ChevronRight size={20} /></button>
+      </div>
+    );
+
+    if (!isCurrentMonthGenerated) {
       return (
-        <div className="bg-white p-6 md:p-12 rounded-xl shadow-sm border border-gray-100 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
-          <Calendar size={48} className="text-gray-300 mb-4" />
-          <h2 className="text-lg md:text-xl font-bold text-gray-700 mb-2">シフトが未生成です</h2>
-          <p className="text-sm md:text-base text-gray-500 mb-6">ダッシュボードからシフトの自動生成を実行してください。</p>
-          <button
-            onClick={() => setActiveTab('dashboard')}
-            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-md"
-          >
-            ダッシュボードへ
-          </button>
+        <div className="space-y-4 md:space-y-6">
+          {monthNav}
+          <div className="bg-white p-6 md:p-12 rounded-xl shadow-sm border border-gray-100 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
+            <Calendar size={48} className="text-gray-300 mb-4" />
+            <h2 className="text-lg md:text-xl font-bold text-gray-700 mb-2">{targetYear}年{targetMonth}月のシフトが未生成です</h2>
+            <p className="text-sm md:text-base text-gray-500 mb-6">この月のシフトを自動生成してください。</p>
+            <button
+              onClick={generateSchedule}
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition-colors shadow-md"
+            >
+              この月のシフトを自動生成
+            </button>
+          </div>
         </div>
       );
     }
@@ -779,9 +798,10 @@ export default function App() {
 
     return (
       <div className="space-y-4 md:space-y-6">
+        {monthNav}
         {/* 日付ナビゲーション */}
         <div className="bg-white p-3 md:p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <button 
+          <button
             onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
             disabled={selectedDay === 1}
             className="w-full sm:w-auto flex items-center justify-center space-x-2 text-blue-600 disabled:text-gray-300 hover:bg-blue-50 px-3 py-2 rounded-lg bg-gray-50 sm:bg-transparent"

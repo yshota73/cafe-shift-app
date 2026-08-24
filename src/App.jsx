@@ -528,7 +528,7 @@ export default function App() {
               return (
                 <button
                   key={emp.id}
-                  onClick={() => setSelectedEmployeeId(emp.id)}
+                  onClick={() => setSelectedEmployeeId(selectedEmployeeId === emp.id ? null : emp.id)}
                   className={`w-full text-left px-3 md:px-4 py-2 md:py-3 rounded-lg transition-colors flex justify-between items-center ${
                     selectedEmployeeId === emp.id 
                       ? 'bg-blue-600 text-white shadow-md' 
@@ -551,74 +551,83 @@ export default function App() {
         </div>
 
         <div className="w-full md:w-2/3">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
-            <h2 className="text-lg font-bold text-gray-800 truncate">
-              {selectedEmp?.name} さんの希望シフト
-            </h2>
-            <div className="flex items-center justify-between sm:justify-center space-x-2 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
-               <button
-                  onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
-                  className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
-                >
-                  <ChevronLeft size={18} />
-                </button>
-                <span className="font-medium w-32 md:w-28 text-center text-sm md:text-base">
-                  {targetMonth}/{selectedDay} ({getDayOfWeek(selectedDay)})
-                </span>
-                <button
-                  onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
-                  className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
-                >
-                  <ChevronRight size={18} />
-                </button>
+          {!selectedEmp ? (
+            <div className="h-48 md:h-[500px] flex flex-col items-center justify-center text-center text-gray-400">
+              <Users size={40} className="mb-3 text-gray-300" />
+              <p className="text-sm md:text-base">左の一覧から従業員を選択してください。</p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-4">
+                <h2 className="text-lg font-bold text-gray-800 truncate">
+                  {selectedEmp.name} さんの希望シフト
+                </h2>
+                <div className="flex items-center justify-between sm:justify-center space-x-2 bg-gray-100 rounded-lg p-1 w-full sm:w-auto">
+                   <button
+                      onClick={() => setSelectedDay(Math.max(1, selectedDay - 1))}
+                      className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
+                    >
+                      <ChevronLeft size={18} />
+                    </button>
+                    <span className="font-medium w-32 md:w-28 text-center text-sm md:text-base">
+                      {targetMonth}/{selectedDay} ({getDayOfWeek(selectedDay)})
+                    </span>
+                    <button
+                      onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
+                      className="p-2 md:p-1 hover:bg-white rounded shadow-sm md:shadow-none bg-white md:bg-transparent"
+                    >
+                      <ChevronRight size={18} />
+                    </button>
+                </div>
+              </div>
 
-          <div className="flex items-center justify-between gap-2 mb-4 bg-blue-50 p-3 rounded-lg">
-            <p className="text-xs md:text-sm text-blue-700">
-              {rangeStart === null
-                ? '出勤する開始の時間帯をタップしてください。（連続した1ブロックのみ選択可）'
-                : `開始: ${TIME_SLOTS[rangeStart]} ／ 終了の時間帯をタップしてください。`}
-            </p>
-            <div className="flex-shrink-0 flex items-center gap-2">
-              {rangeStart !== null && (
-                <button
-                  onClick={() => setRangeStart(null)}
-                  className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap"
-                >
-                  キャンセル
-                </button>
-              )}
-              <button
-                onClick={() => clearPreferenceDay(selectedEmp.id, selectedDay)}
-                className="text-xs font-medium text-red-500 hover:text-red-700 whitespace-nowrap"
-              >
-                この日をクリア
-              </button>
-            </div>
-          </div>
+              <div className="flex items-center justify-between gap-2 mb-4 bg-blue-50 p-3 rounded-lg">
+                <p className="text-xs md:text-sm text-blue-700">
+                  {rangeStart === null
+                    ? '出勤する開始の時間帯をタップしてください。（連続した1ブロックのみ選択可）'
+                    : `開始: ${TIME_SLOTS[rangeStart]} ／ 終了の時間帯をタップしてください。`}
+                </p>
+                <div className="flex-shrink-0 flex items-center gap-2">
+                  {rangeStart !== null && (
+                    <button
+                      onClick={() => setRangeStart(null)}
+                      className="text-xs font-medium text-gray-500 hover:text-gray-700 whitespace-nowrap"
+                    >
+                      キャンセル
+                    </button>
+                  )}
+                  <button
+                    onClick={() => clearPreferenceDay(selectedEmp.id, selectedDay)}
+                    className="text-xs font-medium text-red-500 hover:text-red-700 whitespace-nowrap"
+                  >
+                    この日をクリア
+                  </button>
+                </div>
+              </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3 h-[400px] md:h-[450px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-300">
-            {TIME_SLOTS.map((slot, slotIndex) => {
-              const isSelected = selectedEmp?.preferences[selectedDay]?.includes(slot);
-              const isPendingStart = rangeStart === slotIndex;
-              return (
-                <button
-                  key={slot}
-                  onClick={() => handlePreferenceSlotClick(selectedEmp.id, selectedDay, slotIndex)}
-                  className={`py-2 md:py-3 px-1 md:px-2 text-xs md:text-sm rounded-lg border-2 transition-all font-medium ${
-                    isPendingStart
-                      ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
-                      : isSelected
-                        ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
-                  }`}
-                >
-                  {slot}
-                </button>
-              );
-            })}
-          </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3 h-[400px] md:h-[450px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-300">
+                {TIME_SLOTS.map((slot, slotIndex) => {
+                  const isSelected = selectedEmp.preferences[selectedDay]?.includes(slot);
+                  const isPendingStart = rangeStart === slotIndex;
+                  return (
+                    <button
+                      key={slot}
+                      onClick={() => handlePreferenceSlotClick(selectedEmp.id, selectedDay, slotIndex)}
+                      className={`py-2 md:py-3 px-1 md:px-2 text-xs md:text-sm rounded-lg border-2 transition-all font-medium ${
+                        isPendingStart
+                          ? 'border-blue-600 bg-blue-600 text-white shadow-sm ring-2 ring-blue-300'
+                          : isSelected
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm'
+                            : 'border-gray-200 bg-white text-gray-600 hover:border-blue-300'
+                      }`}
+                    >
+                      {slot}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </div>
       </div>
     );

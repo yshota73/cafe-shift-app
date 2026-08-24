@@ -830,7 +830,7 @@ export default function App() {
             <table className="border-separate border-spacing-0 table-fixed text-xs">
               <thead>
                 <tr>
-                  <th className="sticky left-0 top-14 md:top-16 z-30 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 overflow-hidden whitespace-nowrap text-ellipsis">
+                  <th className="sticky left-0 z-20 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 overflow-hidden whitespace-nowrap text-ellipsis">
                     スタッフ ({workingStaff.length}名)
                   </th>
                   {TIME_SLOTS.map(slot => {
@@ -839,7 +839,7 @@ export default function App() {
                     return (
                       <th
                         key={slot}
-                        className={`sticky top-14 md:top-16 z-20 bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
+                        className={`bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
                       >
                         {isHour && (
                           <span className="block text-[9px] text-gray-500 pb-1">{start.substring(0, 2)}</span>

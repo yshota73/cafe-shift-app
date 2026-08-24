@@ -101,7 +101,7 @@ export default function App() {
   const [showDayPicker, setShowDayPicker] = useState(false);
 
   // シフト入力フォーム用のステート
-  const [selectedEmployeeId, setSelectedEmployeeId] = useState(INITIAL_STAFF[0].id);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
   // 希望シフトの範囲選択 (開始タップ→終了タップで連続した1ブロックのみを設定)
   const [rangeStart, setRangeStart] = useState(null);
   // 新規従業員追加用のステート

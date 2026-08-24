@@ -107,6 +107,8 @@ export default function App() {
   const [rangeStart, setRangeStart] = useState(null);
   // 新規従業員追加用のステート
   const [newStaffName, setNewStaffName] = useState('');
+  // 削除確認モーダルの対象 (削除ボタンを押した従業員。null なら非表示)
+  const [staffPendingDeletion, setStaffPendingDeletion] = useState(null);
 
   // ドラッグ＆ドロップ（長押し・iOSライク）関連のStateとRef
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -308,11 +310,17 @@ export default function App() {
   const handleDeleteStaff = (id) => {
     const updatedStaff = staff.filter(emp => emp.id !== id);
     setStaff(updatedStaff);
-    
+
     // 削除された従業員が選択中だった場合、別の従業員を選択状態にする
     if (selectedEmployeeId === id) {
       setSelectedEmployeeId(updatedStaff.length > 0 ? updatedStaff[0].id : null);
     }
+  };
+
+  const confirmDeleteStaff = () => {
+    if (!staffPendingDeletion) return;
+    handleDeleteStaff(staffPendingDeletion.id);
+    setStaffPendingDeletion(null);
   };
 
   const moveStaffUp = (index) => {
@@ -757,7 +765,7 @@ export default function App() {
                     <button
                       onClick={(e) => {
                          e.stopPropagation();
-                         handleDeleteStaff(emp.id);
+                         setStaffPendingDeletion(emp);
                       }}
                       className="p-1.5 md:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       title="この従業員を削除"
@@ -1093,6 +1101,38 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* 従業員削除の確認モーダル */}
+      {staffPendingDeletion && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setStaffPendingDeletion(null)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-gray-800 mb-2">従業員を削除しますか？</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              <span className="font-semibold">{staffPendingDeletion.name}</span> さんを削除します。この操作は取り消せません。
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => setStaffPendingDeletion(null)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
+              >
+                キャンセル
+              </button>
+              <button
+                onClick={confirmDeleteStaff}
+                className="px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-colors"
+              >
+                削除する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

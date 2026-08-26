@@ -5,8 +5,10 @@ import {
   Coffee, ChefHat, Edit, BarChart2,
   ArrowUp, ArrowDown, Trash2, UserPlus, GripVertical
 } from 'lucide-react';
+import JapaneseHolidays from 'japanese-holidays';
 
 // カフェ・ド・クリエ渋谷3丁目店のシフト時間帯 (準備・片付けを含め 06:30 - 21:30) 30分刻み
+// 平日はこの全時間帯、日曜・祝日は最後の1時間 (20:30-21:30) を除いた 06:30 - 20:30 になる
 const TIME_SLOTS = [
   '06:30 - 07:00', '07:00 - 07:30', '07:30 - 08:00', '08:00 - 08:30', '08:30 - 09:00',
   '09:00 - 09:30', '09:30 - 10:00', '10:00 - 10:30', '10:30 - 11:00',
@@ -17,6 +19,21 @@ const TIME_SLOTS = [
   '19:00 - 19:30', '19:30 - 20:00', '20:00 - 20:30', '20:30 - 21:00',
   '21:00 - 21:30'
 ];
+
+// 日曜・祝日用の短縮営業時間帯 (06:30 - 20:30)
+const REDUCED_HOURS_TIME_SLOTS = TIME_SLOTS.slice(0, -2);
+
+// 指定日が日曜日または日本の祝日 (短縮営業日) かどうか
+const isReducedHoursDate = (year, month, day) => {
+  const date = new Date(year, month - 1, day);
+  if (date.getDay() === 0) return true; // 日曜日
+  return !!JapaneseHolidays.isHoliday(date); // 祝日 (振替休日を含む)
+};
+
+// 指定日に実際に使うべき時間帯配列を返す (平日: 06:30-21:30 / 日祝: 06:30-20:30)
+const getTimeSlotsForDate = (year, month, day) => (
+  isReducedHoursDate(year, month, day) ? REDUCED_HOURS_TIME_SLOTS : TIME_SLOTS
+);
 
 // 時間帯別の必要人数 (渋谷3丁目店の混雑傾向を反映)
 const getRequiredStaffCount = (slot) => {
@@ -95,6 +112,10 @@ const PREFERENCE_SUBMITTER_INDICES = new Set([
   17, 18, 19, 20, 21, 22, 23, 24, 25 // 非対応から9名
 ]);
 
+// ダミーデータ生成時に基準とする年月 (アプリの対象月の初期値と揃える)
+const DEFAULT_TARGET_YEAR = new Date().getFullYear();
+const DEFAULT_TARGET_MONTH = new Date().getMonth() + 1;
+
 // 31日分のダミー希望シフトを生成する関数 (よくばらけた状態を作る)
 const generateDummyPreferences = (empIndex) => {
   const prefs = {};
@@ -106,22 +127,25 @@ const generateDummyPreferences = (empIndex) => {
     // 人と日付の組み合わせで、週休2〜3日程度の休みをランダム風に設定
     if ((empIndex * 2 + day) % 7 < 2) continue;
 
+    // その日の実際の営業時間帯 (日曜・祝日は 06:30-20:30 に短縮)
+    const daySlots = getTimeSlotsForDate(DEFAULT_TARGET_YEAR, DEFAULT_TARGET_MONTH, day);
+
     // 出勤時間帯のパターンをばらけさせる (0: 朝, 1: 昼, 2: 夜, 3: フルタイム)
     const pattern = (empIndex + day) % 4;
     let selectedSlots = [];
 
     if (pattern === 0) {
       // 朝メイン (06:30 - 13:00)
-      selectedSlots = TIME_SLOTS.slice(0, 13);
+      selectedSlots = daySlots.slice(0, 13);
     } else if (pattern === 1) {
       // 昼メイン (11:00 - 17:00)
-      selectedSlots = TIME_SLOTS.slice(9, 21);
+      selectedSlots = daySlots.slice(9, 21);
     } else if (pattern === 2) {
-      // 夜メイン (17:00 - 21:30)
-      selectedSlots = TIME_SLOTS.slice(21, 30);
+      // 夜メイン (17:00 - 閉店まで)
+      selectedSlots = daySlots.slice(21);
     } else {
       // 日中通し (09:00 - 18:00)
-      selectedSlots = TIME_SLOTS.slice(5, 23);
+      selectedSlots = daySlots.slice(5, 23);
     }
     prefs[day] = selectedSlots;
   }
@@ -208,8 +232,11 @@ export default function App() {
 
     // 1日から月末日までループ
     for (let day = 1; day <= daysInMonth; day++) {
+      // その日の実際の営業時間帯 (日曜・祝日は 06:30-20:30 に短縮)
+      const daySlots = getTimeSlotsForDate(targetYear, targetMonth, day);
+
       newSchedule[day] = {};
-      TIME_SLOTS.forEach(slot => { newSchedule[day][slot] = []; });
+      daySlots.forEach(slot => { newSchedule[day][slot] = []; });
       newShortages[day] = [];
 
       // その日に希望シフト(連続した1ブロック)を出している従業員
@@ -221,7 +248,7 @@ export default function App() {
 
       // フェーズ1: まず休憩を考慮せず (全員フル出勤している前提で) 必要人数を満たすように採用する。
       // こうすることで、後から差し引く休憩の影響を過不足なく把握できる。
-      TIME_SLOTS.forEach(slot => {
+      daySlots.forEach(slot => {
         const REQUIRED_STAFF = getRequiredStaffCount(slot);
 
         // 既にこのコマをカバーしている人数・フード担当数が満たされるまで、
@@ -246,8 +273,10 @@ export default function App() {
           pool.sort((a, b) => slotsWorkedMonth[a.id] - slotsWorkedMonth[b.id]);
           const chosen = pool[0];
 
-          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)
-          const block = chosen.preferences[day];
+          // 採用した人の希望ブロック全体をその日のシフトとして一括登録 (連続勤務を保証)。
+          // その日が短縮営業などで希望ブロックが実際の営業時間帯を超えている場合に備え、
+          // daySlots に存在するコマだけに絞り込む。
+          const block = chosen.preferences[day].filter(s => daySlots.includes(s));
           block.forEach(s => newSchedule[day][s].push(chosen));
           assignedIds.add(chosen.id);
           recruitedThisDay.push({ emp: chosen, block });
@@ -273,7 +302,7 @@ export default function App() {
       });
 
       // 人数・スキル不足チェックと記録 (休憩を反映した最終状態で判定)
-      TIME_SLOTS.forEach(slot => {
+      daySlots.forEach(slot => {
         const assignedStaff = newSchedule[day][slot];
         const REQUIRED_STAFF = getRequiredStaffCount(slot);
         const cookCount = assignedStaff.filter(s => s.canCook).length;
@@ -304,9 +333,10 @@ export default function App() {
       setRangeStart(slotIndex);
       return;
     }
+    const daySlots = getTimeSlotsForDate(targetYear, targetMonth, day);
     const startIdx = Math.min(rangeStart, slotIndex);
     const endIdx = Math.max(rangeStart, slotIndex);
-    const block = TIME_SLOTS.slice(startIdx, endIdx + 1);
+    const block = daySlots.slice(startIdx, endIdx + 1);
     setStaff(prev => prev.map(emp =>
       emp.id !== empId ? emp : {
         ...emp,
@@ -594,13 +624,21 @@ export default function App() {
             </table>
           </div>
         </div>
+
+        <p className="text-xs md:text-sm text-orange-600 bg-orange-50 border border-orange-100 rounded-lg p-3 mt-4">
+          <span className="font-semibold">短縮営業について:</span> 日曜日・祝日は最後の1時間 (20:30 - 21:30) を営業しないため、
+          06:30 - 20:30 の時間帯のみでシフトが組まれます。
+        </p>
       </div>
     </div>
   );
 
   const renderPreferenceForm = () => {
     const selectedEmp = staff.find(s => s.id === selectedEmployeeId);
-    
+    // 選択中の日の実際の営業時間帯 (日曜・祝日は 06:30-20:30 に短縮)
+    const daySlots = getTimeSlotsForDate(targetYear, targetMonth, selectedDay);
+    const isReducedDay = daySlots.length < TIME_SLOTS.length;
+
     // 選択された日（selectedDay）に出勤予定（希望）がある人を上に並べ替えたリストを生成
     const sortedStaffForInput = [...staff].sort((a, b) => {
       const aHasShift = (a.preferences[selectedDay] && a.preferences[selectedDay].length > 0) ? 1 : 0;
@@ -670,6 +708,7 @@ export default function App() {
                     </button>
                     <span className="font-medium w-32 md:w-28 text-center text-sm md:text-base">
                       {targetMonth}/{selectedDay} ({getDayOfWeek(selectedDay)})
+                      {isReducedDay && <span className="block text-[10px] font-normal text-orange-500">短縮営業(〜20:30)</span>}
                     </span>
                     <button
                       onClick={() => setSelectedDay(Math.min(daysInMonth, selectedDay + 1))}
@@ -684,7 +723,7 @@ export default function App() {
                 <p className="text-xs md:text-sm text-blue-700">
                   {rangeStart === null
                     ? '出勤する開始の時間帯をタップしてください。（連続した1ブロックのみ選択可）'
-                    : `開始: ${TIME_SLOTS[rangeStart]} ／ 終了の時間帯をタップしてください。`}
+                    : `開始: ${daySlots[rangeStart]} ／ 終了の時間帯をタップしてください。`}
                 </p>
                 <div className="flex-shrink-0 flex items-center gap-2">
                   {rangeStart !== null && (
@@ -705,7 +744,7 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 md:gap-3 h-[400px] md:h-[450px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-gray-300">
-                {TIME_SLOTS.map((slot, slotIndex) => {
+                {daySlots.map((slot, slotIndex) => {
                   const isSelected = selectedEmp.preferences[selectedDay]?.includes(slot);
                   const isPendingStart = rangeStart === slotIndex;
                   return (
@@ -903,10 +942,12 @@ export default function App() {
 
     const daySchedule = schedule[selectedDay] || {};
     const dayShortages = shortages[selectedDay] || [];
+    // 表示中の日の実際の営業時間帯 (日曜・祝日は 06:30-20:30 に短縮)
+    const daySlots = getTimeSlotsForDate(targetYear, targetMonth, selectedDay);
 
     // その日に1コマでも配置されているスタッフを抽出（元の並び順を維持）
     const workingStaffIds = new Set();
-    TIME_SLOTS.forEach(slot => {
+    daySlots.forEach(slot => {
       (daySchedule[slot] || []).forEach(emp => workingStaffIds.add(emp.id));
     });
     const workingStaff = staff.filter(emp => workingStaffIds.has(emp.id));
@@ -1015,7 +1056,7 @@ export default function App() {
                   <th className="sticky left-0 z-20 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 overflow-hidden whitespace-nowrap text-ellipsis">
                     スタッフ ({workingStaff.length}名)
                   </th>
-                  {TIME_SLOTS.map(slot => {
+                  {daySlots.map(slot => {
                     const start = slot.substring(0, 5);
                     const isHour = start.endsWith(':00');
                     return (
@@ -1033,7 +1074,7 @@ export default function App() {
               </thead>
               <tbody>
                 {workingStaff.map(emp => {
-                  const flags = TIME_SLOTS.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
+                  const flags = daySlots.map(slot => (daySchedule[slot] || []).some(s => s.id === emp.id));
                   const firstIdx = flags.indexOf(true);
                   const lastIdx = flags.lastIndexOf(true);
 
@@ -1048,9 +1089,9 @@ export default function App() {
 
                   const shiftLabel = firstIdx === -1
                     ? ''
-                    : `${emp.name}: ${TIME_SLOTS[firstIdx].split(' - ')[0]} 〜 ${TIME_SLOTS[lastIdx].split(' - ')[1]}`
+                    : `${emp.name}: ${daySlots[firstIdx].split(' - ')[0]} 〜 ${daySlots[lastIdx].split(' - ')[1]}`
                       + (breakRange
-                        ? ` (休憩 ${TIME_SLOTS[breakRange[0]].split(' - ')[0]} 〜 ${TIME_SLOTS[breakRange[1]].split(' - ')[1]})`
+                        ? ` (休憩 ${daySlots[breakRange[0]].split(' - ')[0]} 〜 ${daySlots[breakRange[1]].split(' - ')[1]})`
                         : '');
 
                   return (
@@ -1061,7 +1102,7 @@ export default function App() {
                           {emp.canCook && <ChefHat size={12} className="text-orange-500 flex-shrink-0" />}
                         </div>
                       </td>
-                      {TIME_SLOTS.map((slot, i) => {
+                      {daySlots.map((slot, i) => {
                         const working = flags[i];
                         const isBreak = breakRange && i >= breakRange[0] && i <= breakRange[1];
                         const isHour = slot.substring(0, 5).endsWith(':00');
@@ -1092,7 +1133,7 @@ export default function App() {
                 })}
                 {workingStaff.length === 0 && (
                   <tr>
-                    <td colSpan={TIME_SLOTS.length + 1} className="p-8 text-center text-gray-400 text-sm">
+                    <td colSpan={daySlots.length + 1} className="p-8 text-center text-gray-400 text-sm">
                       この日に出勤予定のスタッフはいません。
                     </td>
                   </tr>
@@ -1115,7 +1156,7 @@ export default function App() {
             <h1 className="text-lg md:text-xl font-bold tracking-tight">CafeShift Pro</h1>
           </div>
           <div className="hidden sm:block text-xs md:text-sm text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full font-medium">
-            店舗: 渋谷3丁目店 (シフト: 06:30 - 21:30)
+            店舗: 渋谷3丁目店 (シフト: 06:30 - 21:30 / 日祝は〜20:30)
           </div>
         </div>
       </header>

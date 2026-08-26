@@ -771,16 +771,22 @@ export default function App() {
         onPointerLeave={handlePointerUp}
         style={{ touchAction: isDraggingRef.current ? 'none' : 'auto' }} 
       >
-        <div className="min-w-[500px]">
+        <div className="md:min-w-[500px]">
           {/* ヘッダー行 */}
-          <div className="sticky top-0 bg-white z-10 border-b border-gray-200 shadow-sm flex items-center px-4 py-3 text-xs md:text-sm font-bold text-gray-600">
-             <div className="w-10 md:w-12 text-center flex-shrink-0">順番</div>
-             <div className="w-16 md:w-24 pl-2 flex-shrink-0">ID</div>
-             <div className="flex-1 min-w-[120px]">名前</div>
-             <div className="w-24 md:w-28 text-center flex-shrink-0">フード対応</div>
-             <div className="w-12 md:w-16 text-center flex-shrink-0">削除</div>
+          <div className="sticky top-0 bg-white z-10 border-b border-gray-200 shadow-sm flex items-center px-2 md:px-4 py-3 text-[10px] md:text-sm font-bold text-gray-600">
+             <div className="w-6 md:w-12 text-center flex-shrink-0">順番</div>
+             <div className="w-11 md:w-24 pl-1 md:pl-2 flex-shrink-0">ID</div>
+             <div className="flex-1 min-w-0 pl-1">名前</div>
+             <div className="w-9 md:w-28 flex items-center justify-center flex-shrink-0">
+               <ChefHat size={14} className="md:hidden" />
+               <span className="hidden md:inline">フード対応</span>
+             </div>
+             <div className="w-9 md:w-16 flex items-center justify-center flex-shrink-0">
+               <Trash2 size={14} className="md:hidden" />
+               <span className="hidden md:inline">削除</span>
+             </div>
           </div>
-          
+
           {/* データ行 */}
           <div className="flex flex-col relative pb-8">
             {staff.map((emp, index) => {
@@ -791,9 +797,9 @@ export default function App() {
                   data-row-index={index}
                   onPointerDown={(e) => handlePointerDown(e, index)}
                   onContextMenu={(e) => e.preventDefault()} // スマホ長押し時のポップアップ防止
-                  className={`flex items-center px-4 py-3 border-b border-gray-100 bg-white select-none transition-all duration-300 ${
-                    isDragged 
-                      ? 'scale-[1.03] shadow-xl z-50 ring-2 ring-blue-400 opacity-95 rounded-lg -mx-1 my-1' 
+                  className={`flex items-center px-2 md:px-4 py-3 border-b border-gray-100 bg-white select-none transition-all duration-300 ${
+                    isDragged
+                      ? 'scale-[1.03] shadow-xl z-50 ring-2 ring-blue-400 opacity-95 rounded-lg -mx-1 my-1'
                       : 'hover:bg-blue-50/50 cursor-pointer'
                   }`}
                   style={{
@@ -801,44 +807,45 @@ export default function App() {
                     WebkitTouchCallout: 'none',
                   }}
                 >
-                  <div className={`w-10 md:w-12 text-center text-xs font-mono flex-shrink-0 ${isDragged ? 'text-blue-500 font-bold' : 'text-gray-400'}`}>
+                  <div className={`w-6 md:w-12 text-center text-[10px] md:text-xs font-mono flex-shrink-0 ${isDragged ? 'text-blue-500 font-bold' : 'text-gray-400'}`}>
                     {index + 1}
                   </div>
-                  <div className="w-16 md:w-24 pl-2 text-xs md:text-sm text-gray-500 font-mono flex-shrink-0">
+                  <div className="w-11 md:w-24 pl-1 md:pl-2 text-[10px] md:text-sm text-gray-500 font-mono flex-shrink-0 truncate">
                     {emp.id}
                   </div>
-                  <div className={`flex-1 text-sm md:text-base font-medium flex items-center min-w-[120px] ${isDragged ? 'text-blue-700' : 'text-gray-800'}`}>
-                    {emp.name}
+                  <div className={`flex-1 min-w-0 pl-1 text-sm md:text-base font-medium flex items-center truncate ${isDragged ? 'text-blue-700' : 'text-gray-800'}`}>
+                    <span className="truncate">{emp.name}</span>
                   </div>
-                  <div className="w-24 md:w-28 flex justify-center flex-shrink-0">
+                  <div className="w-9 md:w-28 flex justify-center flex-shrink-0">
                     <button
                       onClick={(e) => {
                         e.stopPropagation(); // ドラッグ発火を防止
                         toggleCookStatus(emp.id);
                       }}
-                      className={`inline-flex items-center px-2 py-1 md:px-3 md:py-1.5 rounded-full text-xs font-bold transition-colors whitespace-nowrap ${
-                        emp.canCook 
-                          ? 'bg-orange-100 text-orange-800 shadow-sm hover:bg-orange-200' 
+                      title={emp.canCook ? 'フード対応可' : 'フード対応不可'}
+                      className={`flex items-center justify-center rounded-full transition-colors whitespace-nowrap w-8 h-8 md:w-auto md:h-auto md:px-3 md:py-1.5 text-xs font-bold ${
+                        emp.canCook
+                          ? 'bg-orange-100 text-orange-800 shadow-sm hover:bg-orange-200'
                           : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                       }`}
                     >
-                      {emp.canCook ? (
-                        <><ChefHat size={14} className="mr-1" /> 対応可</>
-                      ) : (
-                        '不可'
-                      )}
+                      <ChefHat size={16} className="md:hidden" />
+                      <span className="hidden md:inline-flex md:items-center">
+                        {emp.canCook ? (<><ChefHat size={14} className="mr-1" /> 対応可</>) : '不可'}
+                      </span>
                     </button>
                   </div>
-                  <div className="w-12 md:w-16 flex justify-center flex-shrink-0">
+                  <div className="w-9 md:w-16 flex justify-center flex-shrink-0">
                     <button
                       onClick={(e) => {
                          e.stopPropagation();
                          setStaffPendingDeletion(emp);
                       }}
-                      className="p-1.5 md:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      className="p-1 md:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                       title="この従業員を削除"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} className="md:hidden" />
+                      <Trash2 size={18} className="hidden md:block" />
                     </button>
                   </div>
                 </div>

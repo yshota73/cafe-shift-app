@@ -565,6 +565,11 @@ export default function App() {
                       <td className="p-3 text-sm text-gray-600">出社直前のピークラッシュ。テイクアウト需要等で混雑しやすい。</td>
                       <td className="p-3 text-center"><span className="font-bold text-orange-600">4名</span></td>
                    </tr>
+                   <tr className="hover:bg-gray-50">
+                      <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">09:30 - 12:00</td>
+                      <td className="p-3 text-sm text-gray-600">朝のラッシュが落ち着き、ランチピーク前の比較的穏やかな時間帯。（最低3名は確保）</td>
+                      <td className="p-3 text-center"><span className="font-bold text-gray-800">3名</span></td>
+                   </tr>
                    <tr className="hover:bg-gray-50 bg-red-50/30">
                       <td className="p-3 text-sm font-medium border-r border-gray-100 whitespace-nowrap">12:00 - 14:00</td>
                       <td className="p-3 text-sm text-gray-600">ランチタイムピーク。店内飲食・フード注文が集中するため最大人数配置。</td>

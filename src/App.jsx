@@ -1177,7 +1177,7 @@ export default function App() {
       <div className="max-w-7xl mx-auto px-4 py-4 md:py-8 flex flex-col md:flex-row gap-4 md:gap-8">
         
         {/* Navigation - Mobile Top Tabs / Desktop Sidebar */}
-        <aside className="w-full md:w-64 flex-shrink-0 z-10 md:z-auto bg-gray-50 md:bg-transparent sticky top-14 md:top-auto pt-2 md:pt-0 -mx-4 px-4 md:mx-0 md:px-0">
+        <aside className="w-full md:w-64 flex-shrink-0 z-30 md:z-auto bg-gray-50 md:bg-transparent sticky top-14 md:top-auto pt-2 md:pt-0 -mx-4 px-4 md:mx-0 md:px-0">
           <nav className="flex md:flex-col space-x-2 md:space-x-0 md:space-y-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
             <button
               onClick={(e) => { setActiveTab('dashboard'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }); }}

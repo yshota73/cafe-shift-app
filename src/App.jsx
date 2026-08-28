@@ -1047,7 +1047,15 @@ export default function App() {
           <div className="p-3 md:p-4 border-b border-gray-100 flex items-center flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
             <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-orange-400 mr-1.5"></span>フード対応可</span>
             <span className="flex items-center"><span className="inline-block w-3 h-3 rounded-full bg-blue-400 mr-1.5"></span>フード対応不可</span>
-            <span className="flex items-center"><span className="inline-block w-3 h-1.5 rounded-full bg-gray-300 mr-1.5"></span>休憩（6時間以上勤務の場合に1時間）</span>
+            <span className="flex items-center">
+              <span
+                className="inline-block w-3 h-3 mr-1.5 border-y-2 border-gray-300 bg-gray-100"
+                style={{
+                  backgroundImage: 'repeating-linear-gradient(45deg, #9ca3af 0, #9ca3af 2px, transparent 2px, transparent 6px)',
+                }}
+              ></span>
+              休憩（6時間以上勤務の場合に1時間）
+            </span>
           </div>
           <div className="overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300">
             <table className="border-separate border-spacing-0 table-fixed text-xs">
@@ -1116,13 +1124,16 @@ export default function App() {
                             {working && (
                               <div
                                 title={shiftLabel}
-                                className={`h-6 my-1.5 ${emp.canCook ? 'bg-orange-400' : 'bg-blue-400'} ${!prevWorking ? 'rounded-l-full ml-0.5' : ''} ${!nextWorking ? 'rounded-r-full mr-0.5' : ''}`}
+                                className={`h-6 my-1.5 ${emp.canCook ? 'bg-orange-400' : 'bg-blue-400'} ${!prevWorking ? 'ml-0.5' : ''} ${!nextWorking ? 'mr-0.5' : ''}`}
                               ></div>
                             )}
                             {isBreak && (
                               <div
                                 title={shiftLabel}
-                                className="h-1.5 my-[15px] mx-1 rounded-full bg-gray-300"
+                                className="h-6 my-1.5 border-y-2 border-gray-300 bg-gray-100"
+                                style={{
+                                  backgroundImage: 'repeating-linear-gradient(45deg, #9ca3af 0, #9ca3af 2px, transparent 2px, transparent 6px)',
+                                }}
                               ></div>
                             )}
                           </td>

@@ -1070,10 +1070,12 @@ export default function App() {
                     return (
                       <th
                         key={slot}
-                        className={`bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
+                        className={`relative bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
                       >
                         {isHour && (
-                          <span className="block text-[9px] text-gray-500 pb-1">{start.substring(0, 2)}</span>
+                          <span className="absolute left-0 bottom-1 -translate-x-1/2 text-[9px] text-gray-500 whitespace-nowrap">
+                            {parseInt(start, 10)}
+                          </span>
                         )}
                       </th>
                     );

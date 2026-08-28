@@ -1064,31 +1064,16 @@ export default function App() {
                   <th className="sticky left-0 z-20 bg-gray-50 p-2 border-b border-r border-gray-200 text-left w-28 md:w-36 overflow-hidden whitespace-nowrap text-ellipsis">
                     スタッフ ({workingStaff.length}名)
                   </th>
-                  {daySlots.map((slot, i) => {
+                  {daySlots.map(slot => {
                     const start = slot.substring(0, 5);
-                    const end = slot.split(' - ')[1];
                     const isHour = start.endsWith(':00');
-                    const isFirst = i === 0;
-                    const isLast = i === daySlots.length - 1;
                     return (
                       <th
                         key={slot}
-                        className={`relative bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-7 ${isHour ? 'border-l border-gray-300' : 'border-l border-dashed border-gray-100'}`}
+                        className={`bg-gray-50 p-0 border-b border-gray-200 text-center align-bottom h-10 w-6 ${isHour ? 'border-l border-gray-300' : ''}`}
                       >
-                        {isHour && !isFirst && (
-                          <span className="absolute left-0 bottom-1 -translate-x-1/2 text-[10px] font-medium text-gray-600 whitespace-nowrap">
-                            {start.substring(0, 2)}
-                          </span>
-                        )}
-                        {isFirst && (
-                          <span className="absolute left-0 top-0.5 text-[10px] font-bold text-blue-600 whitespace-nowrap bg-gray-50 pr-0.5">
-                            {start}
-                          </span>
-                        )}
-                        {isLast && (
-                          <span className="absolute right-0 top-0.5 text-[10px] font-bold text-blue-600 whitespace-nowrap bg-gray-50 pl-0.5">
-                            {end}
-                          </span>
+                        {isHour && (
+                          <span className="block text-[9px] text-gray-500 pb-1">{start.substring(0, 2)}</span>
                         )}
                       </th>
                     );
@@ -1134,7 +1119,7 @@ export default function App() {
                         return (
                           <td
                             key={slot}
-                            className={`p-0 border-b border-gray-100 h-9 w-7 ${isHour ? (!prevWorking ? 'border-l border-gray-200' : '') : 'border-l border-dashed border-gray-100'}`}
+                            className={`p-0 border-b border-gray-100 h-9 w-6 ${isHour ? 'border-l border-gray-200' : ''}`}
                           >
                             {working && (
                               <div

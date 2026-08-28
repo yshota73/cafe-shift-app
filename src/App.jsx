@@ -1180,7 +1180,7 @@ export default function App() {
         <aside className="w-full md:w-64 flex-shrink-0 z-10 md:z-auto bg-gray-50 md:bg-transparent sticky top-14 md:top-auto pt-2 md:pt-0 -mx-4 px-4 md:mx-0 md:px-0">
           <nav className="flex md:flex-col space-x-2 md:space-x-0 md:space-y-2 overflow-x-auto pb-2 md:pb-0 scrollbar-none">
             <button
-              onClick={() => setActiveTab('dashboard')}
+              onClick={(e) => { setActiveTab('dashboard'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'start', block: 'nearest' }); }}
               className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
                 activeTab === 'dashboard'
                   ? 'bg-blue-600 text-white shadow-md'
@@ -1191,7 +1191,7 @@ export default function App() {
               <span>ダッシュボード</span>
             </button>
             <button
-              onClick={() => setActiveTab('trends')}
+              onClick={(e) => { setActiveTab('trends'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }}
               className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
                 activeTab === 'trends'
                   ? 'bg-blue-600 text-white shadow-md'
@@ -1202,7 +1202,7 @@ export default function App() {
               <span>必要人数設定</span>
             </button>
             <button
-              onClick={() => setActiveTab('input')}
+              onClick={(e) => { setActiveTab('input'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }}
               className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
                 activeTab === 'input'
                   ? 'bg-blue-600 text-white shadow-md'
@@ -1213,7 +1213,7 @@ export default function App() {
               <span>希望シフト入力</span>
             </button>
             <button
-              onClick={() => setActiveTab('staff')}
+              onClick={(e) => { setActiveTab('staff'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' }); }}
               className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
                 activeTab === 'staff'
                   ? 'bg-blue-600 text-white shadow-md'
@@ -1224,7 +1224,7 @@ export default function App() {
               <span>従業員管理</span>
             </button>
             <button
-              onClick={() => setActiveTab('schedule')}
+              onClick={(e) => { setActiveTab('schedule'); e.currentTarget.scrollIntoView({ behavior: 'smooth', inline: 'end', block: 'nearest' }); }}
               className={`flex-shrink-0 flex items-center space-x-2 md:space-x-3 px-3 md:px-4 py-2 md:py-3 rounded-lg md:rounded-xl transition-all font-medium text-sm md:text-base whitespace-nowrap ${
                 activeTab === 'schedule'
                   ? 'bg-blue-600 text-white shadow-md'

@@ -187,6 +187,7 @@ export default function App() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const dragTimeoutRef = useRef(null);
   const isDraggingRef = useRef(false);
+  const scrollYRef = useRef(0);
 
   // 「日付が変わった時だけ」自動選択の再計算に使う最新の staff を保持する Ref
   // (依存配列を selectedDay のみにするため、staff の変化そのものでは再実行させない)
@@ -451,7 +452,14 @@ export default function App() {
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(40);
       }
-      // ドラッグ中のスクロールや余計なアクションを防ぐ
+      // ドラッグ中は背景画面ごと固定する (overflow:hidden だけだと iOS 等で
+      // スクロールを止めきれず、指の動きにつられて画面全体が動いてしまうため)
+      scrollYRef.current = window.scrollY;
+      document.body.style.position = 'fixed';
+      document.body.style.top = `-${scrollYRef.current}px`;
+      document.body.style.left = '0';
+      document.body.style.right = '0';
+      document.body.style.width = '100%';
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
       document.body.style.userSelect = 'none';
@@ -498,13 +506,19 @@ export default function App() {
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
     }
-    // ドラッグ状態の解除とスクロール制限の復元
+    // ドラッグ状態の解除と背景固定の復元
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
       setDraggedIndex(null);
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.left = '';
+      document.body.style.right = '';
+      document.body.style.width = '';
       document.body.style.overflow = '';
       document.body.style.touchAction = '';
       document.body.style.userSelect = '';
+      window.scrollTo(0, scrollYRef.current);
     }
   };
   // ------------------------------------------------

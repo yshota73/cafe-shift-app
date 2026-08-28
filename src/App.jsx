@@ -187,8 +187,6 @@ export default function App() {
   const [draggedIndex, setDraggedIndex] = useState(null);
   const dragTimeoutRef = useRef(null);
   const isDraggingRef = useRef(false);
-  const scrollYRef = useRef(0);
-  const maxScrollYRef = useRef(0);
 
   // 「日付が変わった時だけ」自動選択の再計算に使う最新の staff を保持する Ref
   // (依存配列を selectedDay のみにするため、staff の変化そのものでは再実行させない)
@@ -453,16 +451,7 @@ export default function App() {
       if (window.navigator && window.navigator.vibrate) {
         window.navigator.vibrate(40);
       }
-      // ドラッグ中は背景画面ごと固定する (overflow:hidden だけだと、入れ替えが
-      // 起こる前に画面全体がスクロールしてしまい、並び替えにならないため)
-      scrollYRef.current = window.scrollY;
-      // position:fixed にすると documentElement の scrollHeight が縮むため、固定前に上限を控えておく
-      maxScrollYRef.current = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-      document.body.style.position = 'fixed';
-      document.body.style.top = `-${scrollYRef.current}px`;
-      document.body.style.left = '0';
-      document.body.style.right = '0';
-      document.body.style.width = '100%';
+      // ドラッグ中のスクロールや余計なアクションを防ぐ
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
       document.body.style.userSelect = 'none';
@@ -479,27 +468,8 @@ export default function App() {
 
     if (isDraggingRef.current && draggedIndex !== null) {
       // スクロール等のデフォルト動作を防ぐ
-      if (e.cancelable) e.preventDefault();
-
-      // 画面端付近まで指を持っていった場合は、固定した背景を少しずつ動かして
-      // オートスクロールする（入れ替え自体は瞬時に起こり、スクロールはその後に追従する）
-      const EDGE = 60; // 端からこの距離(px)に入ったらスクロール開始
-      const MAX_STEP = 14; // 1回のpointermoveで動かす最大px
-      const viewportHeight = window.innerHeight;
-      let scrollDelta = 0;
-      if (e.clientY < EDGE) {
-        scrollDelta = -MAX_STEP * (1 - e.clientY / EDGE);
-      } else if (e.clientY > viewportHeight - EDGE) {
-        scrollDelta = MAX_STEP * (1 - (viewportHeight - e.clientY) / EDGE);
-      }
-      if (scrollDelta !== 0) {
-        scrollYRef.current = Math.min(
-          maxScrollYRef.current,
-          Math.max(0, scrollYRef.current + scrollDelta)
-        );
-        document.body.style.top = `-${scrollYRef.current}px`;
-      }
-
+      if (e.cancelable) e.preventDefault(); 
+      
       // 指やカーソルの下にある要素を特定
       const target = document.elementFromPoint(e.clientX, e.clientY);
       if (target) {
@@ -528,19 +498,13 @@ export default function App() {
       clearTimeout(dragTimeoutRef.current);
       dragTimeoutRef.current = null;
     }
-    // ドラッグ状態の解除と背景固定の復元
+    // ドラッグ状態の解除とスクロール制限の復元
     if (isDraggingRef.current) {
       isDraggingRef.current = false;
       setDraggedIndex(null);
-      document.body.style.position = '';
-      document.body.style.top = '';
-      document.body.style.left = '';
-      document.body.style.right = '';
-      document.body.style.width = '';
       document.body.style.overflow = '';
       document.body.style.touchAction = '';
       document.body.style.userSelect = '';
-      window.scrollTo(0, scrollYRef.current);
     }
   };
   // ------------------------------------------------
